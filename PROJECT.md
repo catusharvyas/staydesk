@@ -1,0 +1,306 @@
+# Stay — Hotel Management Web App
+
+**Living reference doc.** Source spec: [Minimalist_Hotel_Management_Web_App_Design.pdf](Minimalist_Hotel_Management_Web_App_Design.pdf).
+This file is the single source of truth for scope, architecture and decisions. Update it as we build — don't let it drift from reality.
+
+**Status (2026-08-08): all 8 build phases (§6) are complete.** The full V1 feature list (§7) is built, live-verified against the real Supabase project, and `next build`/`npm run lint` are clean. What's genuinely left before this could go to real users: GitHub/Vercel setup (blocked on your one-time steps, see the access-status note near §8's decision log), a production deploy + smoke test (nothing has run outside `next dev` yet), real branded icons (current ones are a generated placeholder mark), and a decision on whether to build the full offline-write outbox that Phase 8 deliberately deferred (§5). Everything else — schema, RLS, pricing/GST, bookings, invoicing, reports — has been built and verified end-to-end, not just written.
+
+---
+
+## 1. Product summary
+
+A minimalist, mobile-first hotel PMS (no restaurant/POS) covering: room status, reservations, guest stays,
+payments and GST. Front-desk speed is the design priority — uncluttered, room-first, configurable.
+
+**Core modules:** Dashboard · Rooms · Bookings · Guests · Payments & Reports.
+
+**Room workflow (must hold):** `Occupied → Checkout → Cleaning → Available`. A checked-out room never
+auto-flips to Available — housekeeping must explicitly release it.
+
+**Booking rule:** date-overlap validation is mandatory on every create/edit — no double-booking a room.
+
+Full V1 feature list is in §7.
+
+---
+
+## 2. Architecture decisions (confirmed)
+
+| Decision | Choice | Why |
+|---|---|---|
+| Multi-tenancy | Yes, from day one | One codebase serves multiple properties; retrofitting tenancy later is expensive |
+| Backend | Supabase (Postgres + Auth + Storage + Edge Functions + Realtime) | Relational fit for pricing/tax rules, built-in RLS for tenant isolation, realtime for room-board updates |
+| Frontend delivery | PWA (installable, responsive) | Front-desk usage is tablet/mobile-heavy; installable + resilient to flaky connections |
+| Frontend framework | Next.js (App Router) + Tailwind + shadcn/ui | Pairs well with Supabase, good PWA tooling, fast to build admin-style UIs |
+| Hosting | Vercel | Native Next.js fit, easy preview deploys |
+| Offline writes | Queue locally, sync on reconnect | Front desk can't block on connectivity; queued mutations (check-in, payment, status change) replay against Supabase once back online |
+
+---
+
+## 3. Multi-tenancy model
+
+- **Tenant boundary = `property_id`.** Every operational table carries it.
+- **`organizations`** can own multiple **`properties`** (chains/groups), but a solo owner is just an org with one property — no special-casing needed.
+- **`property_users`** maps a Supabase auth user to a property with a role (`owner`, `admin`, `front_desk`, `housekeeping`). A user can belong to multiple properties.
+- **Isolation is enforced with Postgres Row-Level Security**, not app-layer filtering — every query is safe by default even if a client forgets a `WHERE`.
+- Configurable-per-property settings (tax rules, payment modes, room types) live in per-property rows, never hardcoded — this is what lets one codebase serve different properties with different GST setups, currencies, etc.
+
+RLS pattern (applied per table):
+```sql
+-- read/write allowed only if the user has a role on the row's property
+using (
+  exists (
+    select 1 from property_users pu
+    where pu.property_id = <table>.property_id
+      and pu.user_id = auth.uid()
+  )
+)
+```
+Role-specific restrictions (e.g. only `owner`/`admin` can override rates, only `housekeeping`/`front_desk` can change room status) layer on top as additional policy conditions or checked in Edge Functions for complex writes (e.g. checkout + invoice generation as one transaction).
+
+---
+
+## 4. Database schema (draft)
+
+```
+organizations
+  id, name, created_at
+
+properties
+  id, org_id -> organizations, name, address, state_code, gstin,
+  timezone, currency, created_at
+
+property_users
+  property_id -> properties, user_id -> auth.users, role, created_at
+  PK (property_id, user_id)
+
+room_types
+  id, property_id, name, base_rate, extra_bed_rate, max_occupancy
+
+rooms
+  id, property_id, room_type_id -> room_types, number, floor,
+  status enum(available, occupied, reserved, cleaning, maintenance),
+  notes
+
+room_status_log            -- audit trail for the cleaning-release workflow
+  id, room_id, from_status, to_status, changed_by, changed_at
+
+guests
+  id, property_id, name, phone, email,
+  id_proof_type, id_proof_number, address, notes
+
+bookings
+  id, property_id, guest_id -> guests, room_id -> rooms,
+  check_in_planned, check_out_planned,
+  check_in_actual, check_out_actual,
+  status enum(reserved, checked_in, checked_out, cancelled),
+  rate_override, discount, created_by, created_at
+
+booking_charges            -- extra beds, damages, misc charges
+  id, booking_id, description, amount, taxable boolean
+
+payments
+  id, booking_id, amount, mode enum(cash, upi, card, bank_transfer),
+  reference, received_at, received_by
+
+tax_settings                -- one row per property, configurable not hardcoded
+  id, property_id, gst_enabled,
+  rate_band_1_threshold, rate_band_1_rate,
+  rate_band_2_rate,
+  intra_state_split boolean, rounding_mode
+
+invoices
+  id, booking_id, invoice_number, issued_at,
+  taxable_value, cgst, sgst, igst, total, pdf_url
+```
+
+Notes:
+- `bookings` must have a DB-level exclusion constraint (or checked transaction) preventing overlapping date ranges per `room_id` — don't rely on app-layer checks alone.
+- GST calc (`tax_settings` → invoice totals) should live in a single Edge Function / SQL function so the logic isn't duplicated between UI preview and actual invoice generation.
+- `gstin`/`state_code` on `properties` feeds the CGST+SGST vs IGST decision at invoice time.
+
+---
+
+## 5. PWA requirements
+
+- Web app manifest (installable, icons, theme colors) + service worker (Workbox or Next PWA plugin).
+- **Caching strategy (revised in Phase 4 after a real bug — see §9):** only content-hashed static assets (`/_next/static/*`, `/icons/*`) are cached, cache-first. Every page navigation and every RSC data fetch is network-only — no caching, no stale fallback. This app has no route that's ever safe to serve from a cache: everything is dynamic, auth-gated, and scoped per-property via RLS. Do not reintroduce cache-first for navigations/data fetches without solving the staleness problem properly (e.g. cache-bust on auth/property change) — the first attempt at this silently served one page's content in place of another.
+- **Offline writes: revised down to online-only, deliberately (Phase 8 decision).** The original plan was a queued/synced offline outbox (§2's original decision). Reaching Phase 8, that was re-scoped: writes now simply fail normally when offline — no IndexedDB outbox, no replay-on-reconnect. What ships instead is a [ConnectivityBanner](src/components/pwa/connectivity-banner.tsx) that makes this safe: staff see "You're offline" *before* attempting an action, not a confusing silent failure after. Full queue-and-sync (a real outbox, converting key actions from Server Actions to replayable API routes, conflict handling against the booking-overlap constraint) remains a legitimate future phase if real usage shows a need for it — it just isn't V1.
+- Read paths do **not** render from cache when offline — reversed from the original plan. Every route in this app is dynamic and RLS-scoped per tenant; Phase 4 found live that caching any of it was actively unsafe (served one user's page in place of another's). See §9 for both the Phase 4 and Phase 8 findings that shaped this.
+- Mobile UX rules from spec: single-column layout, large touch targets, persistent bottom nav (Home / Rooms / + Booking / Guests / More), tables → cards (no horizontal scroll).
+
+---
+
+## 6. Suggested build phases
+
+1. ✅ **Foundation** — Supabase project, multi-tenant schema + RLS, auth, org/property bootstrap flow. Done — see §9.
+2. ✅ **Rooms + Dashboard** — room board, status workflow. Done for the CRUD/read path (real Supabase queries, verified live end-to-end — see §9). **Not yet done:** realtime updates (room board doesn't live-update if another device changes a room's status) and the housekeeping cleaning-release action — room status is currently only set implicitly at creation (`available`); there's no UI to move a room through Occupied → Cleaning → Available yet. That naturally lands with Phase 3 (check-in/check-out) or as a small follow-up.
+3. ✅ **Bookings** — create/extend/cancel/check-in/check-out with overlap validation. Done — see §9. **Not yet done:** editing a booking's guest/room after creation (only dates can change, via Extend Stay), and no UI surfaces `booking_charges` yet (table exists, unused until Phase 5's pricing engine).
+4. ✅ **Guests** — records + stay history. Done — see §9.
+5. ✅ **Pricing + GST + Payments** — tariff/override/discount engine, configurable GST, multi-mode payments, outstanding tracking. Done — see §9. **Not yet done:** a dedicated Settings section beyond tax (payment-mode config, room-type-level extra-bed pricing UI); `booking_charges`/discount are per-stay only, not templated.
+6. ✅ **Invoices** — tax invoice generation at checkout. Done — see §9. **Not yet done:** real PDF generation (`invoices.pdf_url` stays unpopulated; the invoice page is browser-print-friendly HTML, not an actual PDF file/download).
+7. ✅ **Reports** — revenue, occupancy, arrivals/departures, outstanding, GST summary. Done — see §9.
+8. ✅ **PWA polish** — installability, offline behavior, performance pass. Done — see §9. Offline scope was deliberately revised down from "queue and sync" to "online-only with a connectivity indicator" (§8 decision), on top of one of the most significant findings of the whole build — see §9.
+
+---
+
+## 7. Recommended V1 scope (from source spec)
+
+- Dashboard with today's operational summary
+- Room master and visual room board
+- Reservation with availability / overlap validation
+- Check-in, checkout and cleaning-release workflow
+- Guest records and stay history
+- Flexible room pricing, discounts and extra charges
+- GST configuration and tax invoice generation
+- Multiple payment modes and outstanding balance tracking
+- Mobile-responsive interface / installable PWA
+- Basic revenue, occupancy, GST and outstanding reports
+
+---
+
+## 8. Decision log
+
+| Date | Decision | Status |
+|---|---|---|
+| 2026-08-07 | Multi-tenant from V1 | Confirmed |
+| 2026-08-07 | Supabase as backend | Confirmed |
+| 2026-08-07 | PWA delivery | Confirmed |
+| 2026-08-07 | Next.js + Tailwind + shadcn/ui frontend | Confirmed |
+| 2026-08-07 | Vercel hosting | Confirmed |
+| 2026-08-07 | Offline writes: queue locally, sync on reconnect | Confirmed |
+| — | Single-property vs. group/chain UI in V1 | Open — schema supports it either way |
+| 2026-08-07 | Hostinger scope: domain/DNS only, Vercel stays the app host | Confirmed |
+
+**Access/tooling status** (as of 2026-08-07):
+- **Supabase** — connected and provisioned. Project **`staydesk`** (ref `znieiphiixdzjrkaozlb`, org `catusharvyas's Org`, region `ap-southeast-2`), URL `https://znieiphiixdzjrkaozlb.supabase.co`. Schema + RLS + hardening migrations applied (see §9). Free tier ($0/mo confirmed before creation — though in the end this reused an existing project rather than creating a new one).
+- **GitHub** — not yet authorized in this environment; needs a one-time OAuth via `claude mcp`/`/mcp` in an interactive session (can't be done from a non-interactive session).
+- **Vercel** — no MCP connector exists for it; standard flow is push-to-GitHub + connect-repo-in-Vercel-dashboard (one-time, user's own login), then auto-deploy on push. No credential handoff needed.
+- **Hostinger** — no connector; scope is domain/DNS records only, set manually in Hostinger's panel once a domain is chosen.
+
+## 9. Supabase project log
+
+- Org has a 2-active-project free-tier cap. An empty project named `staydesk` already existed (created same day, before this conversation reached this point) and was confirmed with the user as the intended project — used instead of creating a new one.
+- Migrations applied in order: `0001_init.sql` (schema) → `0002_rls.sql` (tenant-isolation policies) → `0003_security_hardening.sql` → `0004_fix_rls_helper_exposure.sql`. All four are committed under `supabase/migrations/` as the source of truth; the project's live state matches them exactly.
+- **Bug caught and fixed during setup:** `0003` revoked the `anon` role's `EXECUTE` on the two RLS helper functions (`is_property_member`, `current_property_role`) to close a security-advisor warning about them being callable as public RPC endpoints. This broke RLS itself — anonymous requests against any policy-protected table started returning a hard `42501 permission denied` instead of the correct empty result, because policy evaluation still needs to *invoke* the function for the requesting role even though it's `SECURITY DEFINER`. Fixed in `0004` by relocating both functions to a new `internal` schema (not exposed by PostgREST, which only serves `public` by default) with `EXECUTE` restored to `anon`/`authenticated`. `ALTER FUNCTION ... SET SCHEMA` preserves the function's OID, so every existing policy kept working across the move with zero redefinition. Verified via direct REST calls: anon `select` on `rooms` → `200 []` (correct), anon RPC to the old `public.is_property_member` path → `404` (endpoint gone). **Lesson: when advisor-driven hardening touches a function referenced by RLS policies, test an actual anon-role request against a policy-protected table before considering the fix done — a clean advisor scan doesn't prove RLS still functions correctly.**
+- Also verified live: the `no_overlapping_bookings` exclusion constraint still rejects overlapping bookings correctly after `btree_gist` was relocated from `public` to a dedicated `extensions` schema (also part of `0003`).
+- Final security advisor scan: 0 warnings.
+- `.env.local` (gitignored) has the real project URL + modern publishable key (`sb_publishable_...`, preferred over the legacy anon JWT per Supabase's own guidance). `SUPABASE_SERVICE_ROLE_KEY` is intentionally blank — it isn't retrievable via MCP (withheld as a secret); pull it from the dashboard's API settings when Phase 6 (invoicing) needs it.
+- **`0005_bootstrap_property.sql`** — a second RLS bootstrapping problem, hit while building onboarding: a brand-new user can't `INSERT` into `organizations`/`properties`/`property_users` directly (nothing exists yet to make them a member of, which is exactly what those policies correctly gate on). Rather than widen RLS with an open `INSERT` policy, added a `SECURITY DEFINER` function `bootstrap_property(org_name, property_name, state_code, gstin)` that does the whole org+property+owner+tax_settings bootstrap atomically, scoped to `auth.uid()`, one-shot per user (raises if they already belong to a property). `EXECUTE` granted to `authenticated` only. The advisor flags this as "signed-in users can execute" — **that warning is expected and intentional here**, unlike the `0003` case: this function is *meant* to be called directly via `supabase.rpc('bootstrap_property', ...)`, that's its whole mechanism.
+- **Auth is email/password** via Supabase Auth (`src/app/(auth)/login/`), gated by `src/proxy.ts` (redirects signed-out users to `/login`, signed-in users away from it) and `(app)/layout.tsx` (redirects users with no property to `/onboarding`). New Supabase projects default to requiring email confirmation — verified this live (a real signup returns `data.session === null` and Supabase's own message), and the login form surfaces that ("Check your email to confirm your account…") rather than failing silently.
+- **End-to-end verified live** (real signup → SQL-confirmed test account, since no inbox access from here → sign-in → onboarding → `bootstrap_property` RPC → Dashboard/Rooms with real queries → created a room type and a room through the actual UI → room board, room detail, and Dashboard's live counts all updated correctly) then **deleted all of it** (`delete from organizations ...` cascades through every table via the FK chain; deleted the test `auth.users` row separately) — project is back to 0 rows everywhere, ready for the real property.
+- **Two real bugs found and fixed during this verification, not just theoretical review:**
+  1. Base UI's `<Select.Value>` (used by shadcn's `Select`) does **not** infer its displayed label from declaratively-rendered `<SelectItem>` children — without an explicit `items` map passed to `<Select items={...}>`, it falls back to displaying the raw `value` (a UUID, in the room-type picker). Fixed in [room-forms.tsx](src/app/(app)/rooms/room-forms.tsx) by building `items` from `Object.fromEntries(roomTypes.map(rt => [rt.id, rt.name]))`. Worth remembering for every future `<Select>` built against a DB-id-keyed list.
+  2. (Covered above) the `0003`→`0004` RLS-helper-exposure regression.
+  - Also noted, not a bug: restarting the dev server while a browser tab is still open on the old instance produces a one-off client/server RSC desync error (`chunk.reason.enqueueModel is not a function`) on the next client-side navigation. A hard reload clears it. Don't mistake this for an app bug after a dev-server restart.
+- **Phase 3 (Bookings) — dev-account workaround:** Supabase's default email service rate-limits confirmation emails (hit it on the 2nd signup attempt in one session). Worked around by inserting a pre-confirmed `auth.users` row directly via SQL (`pgcrypto`'s `crypt()`/`gen_salt('bf')` for the password hash, plus a matching `auth.identities` row) instead of going through `signUp()` — skips the email path entirely. Dev/test-only technique; deleted afterward like every other test account in this log.
+- **Phase 3 — full flow verified live**: created 2 rooms, made a same-day booking (room auto-flips to `reserved`), confirmed the *other* room stayed `available`, confirmed a re-query of "New booking" for the same dates correctly excluded the now-booked room from the picker (UX-level filter matching the DB constraint), reused the same guest for a second booking (no duplicate `guests` row), then walked one booking through check-in (`room → occupied`) → check-out (`room → cleaning`, not straight to available) → release (`room → available`), and cancelled the other reserved booking (`room → available`). Confirmed the `room_status_log` audit trail recorded all three real transitions with correct timestamps. Dashboard counts (occupied/available/arrivals/departures) and the arrivals list were all correct against this real data throughout. Cleaned up to 0 rows afterward.
+- **Known gap, stated plainly:** the overlap-rejection *error message* path (`isOverlapViolation` → "That room is already booked for those dates") was verified against a raw SQL insert in Phase 1 and is a straightforward match on Postgres error code `23P01`, but wasn't independently re-exercised through the live UI in Phase 3 — the UX-level availability filter correctly prevents ever selecting an already-booked room through normal navigation, so reaching that exact code path live would require simulating a race (two concurrent submissions for the last available room), which wasn't done. Worth a real concurrency test before relying on it in production.
+- **Phase 4 (Guests) — a serious PWA bug found and fixed, not a small one.** While testing the Guests list/search/detail pages live, navigating to `/guests` intermittently rendered a *different route's* content (`/rooms`'s form, `/bookings/new`'s wizard) while the address bar still showed the correct URL. A direct `fetch('/guests')` from the console returned the correct HTML every time — so the server was never wrong; the browser tab was. Root cause: [public/sw.js](public/sw.js)'s original cache-first strategy applied to *every* GET request, including Next.js's client-side RSC navigation fetches — and this app has no page that's ever safe to cache-and-reuse, since every route is dynamic and scoped to the signed-in user's property via RLS. Rewritten so only content-hashed static assets (`/_next/static/*`, `/icons/*`) are cached at all; every navigation and RSC fetch is network-only now. Verified by clearing all registrations/caches, reloading, and confirming `/guests` rendered correctly and stayed correct across repeat navigation. **This shipped in Phase 2 and sat undetected through all of Phase 2 and Phase 3's testing** — those sessions happened to navigate in an order that never surfaced it. Take-away: a PWA's service worker needs its own explicit test pass (repeatedly navigating between routes, checking rendered content against the URL, not just checking network status codes), not just implicit exercise via general feature testing — page-content bugs, not network-status bugs, are the failure mode to watch for.
+- **Phase 4 — full flow verified live**: created a guest via the inline form, confirmed it appears in the list and in name/phone search (and that a non-matching search correctly shows the empty state), edited the guest's phone number on the detail page and confirmed the change persisted, then created a booking for that guest and confirmed it appeared correctly in "Stay history" on the guest detail page. Cleaned up to 0 rows afterward, including one incomplete signup attempt that hit Supabase's email rate limit (worked around the same way as Phase 3 — a pre-confirmed `auth.users` row inserted directly via SQL).
+- **Phase 5 (Pricing + GST + Payments):** [src/lib/pricing.ts](src/lib/pricing.ts) is the single calculation module — `calculateBookingPricing()` takes nights/rate/discount/charges/tax-settings and returns the full breakdown; both the room detail page now and invoice generation later (Phase 6) must import from here, never reimplement the math. Verified with a standalone script against the source spec's own worked example (rate×nights 7000, discount 500 → taxable 6500 → GST 780 @ 12% → grand total 7280 → advance 2000 → balance 5280) before ever touching the browser — exact match.
+  - GST rate band is selected by **taxable value** (post-discount, pre-tax), not the raw room rate — matches the spec example precisely (6500 < 7500 threshold → 12% band, not 18%).
+  - `booking_charges.taxable` is honored: taxable charges add to the GST base; non-taxable charges (e.g. a security deposit) add to the grand total *after* tax without affecting the taxable value or GST amount.
+  - CGST+SGST split vs. single IGST line is a per-property toggle (`tax_settings.intra_state_split`) — noted in code that hotel accommodation's place-of-supply is always the property's own location, so IGST is the rare exception in practice, not the common case; the toggle just controls presentation of the same `gstAmount`.
+  - Added a `/settings/tax` page (owner/admin only, enforced by both `tax_settings_write` RLS and an app-level check for a friendlier error) to edit GST enabled/rate bands/threshold/split/rounding — linked from the Reports page.
+  - Room detail page now shows the full live breakdown (room charge → itemized charges → taxable value → GST line(s) → grand total → paid → balance), plus forms to set a rate override/discount, add a charge (taxable or not), and record a payment (cash/UPI/card/bank transfer) — "Receive Payment" is no longer a disabled placeholder.
+  - **Verified live, every math path, not just the happy path**: base 2-night booking (7000 → 7840 total, no discount) matched hand-calculation; applying the ₹500 discount reproduced the spec's exact worked example (6500/780/7280); recording a ₹2000 payment gave exactly the spec's balance (5280); toggling `intra_state_split` off live-switched the room page from CGST+SGST to a single IGST line at the same total, then back; adding a non-taxable ₹1000 charge correctly left the taxable value/GST unchanged (6500/780) while adding the full 1000 to the grand total (8280) and balance (6280). Found one real but minor bug while looking at the payment display — a negative "Paid ₹-2000.00" — fixed to sign-then-absolute-value formatting (`-₹2000.00`). Cleaned up to 0 rows afterward. `next build` and `npm run lint` both clean.
+  - **Testing note, not an app bug:** hit the same Turbopack dev-mode client-router desync described in Phase 4 (URL correct, DOM showing a different route's content) twice more during this phase's live testing, always during rapid back-to-back programmatic navigations. Confirmed each time it's unrelated to the (already-fixed) service worker — a direct `fetch()` always returns correct content, and a fresh `navigate()` or new tab always clears it. Purely a dev/automation-environment quirk, not present in the actual page logic; mentioning here so a future session doesn't mistake it for a regression of the Phase 4 SW bug.
+- **Phase 6 (Invoices):** two schema gaps closed first, via `0006_invoice_numbering.sql`:
+  1. `invoices` was the one table without `property_id` (every other table carries it directly per §3's tenant-boundary pattern; invoices only had it indirectly through `booking_id → bookings.property_id`). Backfilled, made `NOT NULL`, RLS switched from a join-through-bookings check to the same direct `is_property_member(property_id)` pattern every other table uses.
+  2. No invoice-numbering mechanism existed. Added `invoice_counters` (one row per property, atomic upsert-increment — the standard safe-counter pattern, avoids a real Postgres `SEQUENCE` per property) and a thin `next_invoice_number()` `SECURITY DEFINER` wrapper around it. **Deliberately kept this function pure numbering, no GST/pricing logic** — that stays solely in `src/lib/pricing.ts`, called from application code (`src/lib/invoicing.ts`), not duplicated into SQL. `next_invoice_number` shows the same "signed-in users can execute" advisor warning as `bootstrap_property` — expected/intentional, same reasoning.
+  - [src/lib/invoicing.ts](src/lib/invoicing.ts) — `generateInvoiceForBooking()`: fetches booking/charges/tax-settings, calls `calculateBookingPricing()` (the one and only pricing computation, imported not reimplemented), allocates a number via the RPC, inserts the invoice. Called automatically from `checkOutBooking` (best-effort — an invoice failure must never block checkout, since the room still needs to be released for housekeeping) and manually retryable from the invoice page if that best-effort attempt fails.
+  - Invoice numbers are formatted `INV-0001`, `INV-0002`, … per property, verified sequential live across two separate bookings/checkouts.
+  - [bookings/[bookingId]/invoice/page.tsx](src/app/(app)/bookings/[bookingId]/invoice/) — printable invoice: property header (name/address/GSTIN), invoice number + date, guest, room + stay dates, itemized charges, taxable value, tax line(s), grand total, payments received, balance due. Before generation it shows a **live preview** computed the same way (same `calculateBookingPricing()` call) with a manual "Generate invoice" button; after generation it shows the **frozen stored values** from the `invoices` row, not a live recompute — matching how real invoicing works (a generated invoice is a snapshot, not something that silently changes if a discount is edited later).
+  - Linked from the Bookings list (an "Invoice" link appears once a booking is `checked_out`). Not yet linked from the room detail page itself, since a room's "active booking" query stops matching the moment it's checked out (by design) — the Bookings list is the current path to a past stay's invoice; worth a direct link from the checkout success state in a future pass.
+  - **Verified live, exactly reproducing the Phase 5 worked numbers**: booked room 101 for 2 nights at ₹3500 with a ₹500 discount (same inputs as the spec's own example), checked in, recorded a ₹2000 payment, checked out — invoice auto-generated as `INV-0001` with taxable value 6500, CGST/SGST 390 each, total 7280, matching the stored DB row exactly. Viewed the invoice page and confirmed every line matches (including "Paid -₹2000.00" / "Balance due ₹5280.00" using the same sign-then-abs formatting fix from Phase 5). Booked and checked out a second room (102, 1 night, no discount) and confirmed `INV-0002` — total 3920 (3500 + 12% GST), proving the per-property counter increments correctly across separate bookings. Cleaned up to 0 rows afterward (including `invoice_counters`, confirming its cascade delete). `next build` and `npm run lint` both clean.
+  - **Known limitation, not fixed this phase:** `listAvailableRooms` (Phase 3) filters only by *active* (reserved/checked_in) bookings, not by `rooms.status` — so a room sitting in `cleaning` after checkout (not yet released) can still be selected for a *new* booking with different dates today, even though housekeeping hasn't confirmed it's ready. Noticed while testing the second booking in this phase. Not a data-integrity bug (the exclusion constraint still prevents actual date overlap), but a real workflow gap worth closing later — likely by also excluding non-`available`/`reserved` rooms from same-day availability.
+- **Phase 7 (Reports):** [src/lib/queries/reports.ts](src/lib/queries/reports.ts) — five report queries: revenue by payment mode, GST/taxable-sales summary (both date-range scoped, filtered by `payments.received_at` / `invoices.issued_at`), arrivals/departures counts, a live occupancy snapshot, and outstanding balances. All aggregate client-side over a date-filtered select — fine at single-property data volumes; flagged in a comment to move to a SQL view/RPC if this ever needs to scale further.
+  - **Outstanding balances is deliberately not date-range scoped** — "who owes money right now" is a current-state question, not historical. It covers both `checked_in` bookings (balance computed live via `calculateBookingPricing()`, same as the room page) and `checked_out` ones (balance from the frozen `invoices.total`) — same reasoning as the invoice page: use the snapshot once one exists, don't recompute live and risk disagreeing with what was actually invoiced.
+  - **Occupancy is also not date-ranged** — it's a live snapshot of current `rooms.status` counts. A historical "occupancy over this range" would need room-night tracking, which isn't built; noted in-code rather than silently faking a range-scoped number.
+  - **Verified live, every section, both before and after state changes**: confirmed all-zero empty states with no data; created a booking, checked in, and recorded a partial ₹1000 payment against a ₹4480 total — confirmed 1 arrival, ₹1000 cash revenue, and an outstanding balance of exactly ₹3480 computed via the live-pricing path (no invoice existed yet); checked out and confirmed the GST summary picked up the new invoice (1 invoice, taxable value 4000, CGST/SGST 240 each, total 4480) and the *same* ₹3480 outstanding balance now came from the frozen invoice-total path instead — proving both branches agree. Confirmed date-range filtering actually narrows results (not cosmetic): switching the range to the booking's checkout date correctly moved it from 0 to 1 departure and zeroed out revenue/GST for that day, while outstanding balances stayed unfiltered as designed. Cleaned up to 0 rows. `next build` and `npm run lint` both clean.
+- **Phase 8 (PWA polish) — offline scope explicitly re-decided, then the single biggest bug of the whole build.**
+  - **Offline scope:** before starting, checked back in given this reverses an explicit earlier decision (§2's "queue and sync"). Confirmed with the user: ship online-only for V1 (writes fail normally offline) with a clear connectivity indicator, instead of building a real IndexedDB outbox this phase. Documented in §5 above.
+  - **Icons:** the Phase 1 placeholder was SVG-only, which iOS ignores entirely for home-screen icons. Hand-built real PNGs (192/512/512-maskable/apple-touch-icon) with a small Node script using only `zlib` (no image library dependency) — manually constructs valid PNG chunks (IHDR/IDAT/IEND) and CRC32s them. Verified by actually opening the generated files as images, not just checking they're non-empty. Manifest and `layout.tsx` metadata both updated to reference them; verified live that all four serve `200`/`image/png` and that Next's Metadata API correctly emits the `<link rel="apple-touch-icon">` tag.
+  - **`ConnectivityBanner`** ([src/components/pwa/connectivity-banner.tsx](src/components/pwa/connectivity-banner.tsx)): shows a red "You're offline" bar via `useSyncExternalStore` on `navigator.onLine`. Two real bugs surfaced building this one small component, in order:
+    1. **A genuine hydration bug**, caught via a fresh-tab reproduction (not a lint hint): an early version used a `useState` lazy initializer guarded by `typeof navigator !== "undefined"`. That guard looks SSR-safe but isn't — Node's SSR runtime *has* a `navigator` global, just without an `onLine` property, so `!navigator.onLine` silently evaluated to `true` (offline) on the server while the browser correctly evaluated `false`, producing a server/client markup mismatch on every single page. Fixed by switching to `useSyncExternalStore` with a `getServerSnapshot` that always returns `true` — the API's whole design is for exactly this class of browser-only-state problem.
+    2. **The session's biggest bug**, and the reason two "fixes" in a row (a lazy-init guard, then inline styles) appeared not to work even though they were correct: this project's own service worker was still registering in `next dev` and cache-first'ing `/_next/static/*` — correct and safe in production, where Next's chunk filenames are truly content-hashed and immutable, but **not** safe in dev, where Turbopack doesn't give the same guarantee across incremental recompiles. Every fresh browser tab this phase kept rendering the *old* pre-edit component, because the SW (registered back in earlier phases and never re-cleared each session) was serving a stale cached JS chunk regardless of file edits, `.next` cache clears, or full dev-server restarts. Root-caused by comparing a live element's `outerHTML` against the actual current source — the DOM showed old class names that didn't exist in the file anymore, which is what broke the "it must be a Tailwind CSS generation issue" hypothesis and pointed at stale JS instead of stale CSS. **Fixed at the source**, not worked around: [register-sw.tsx](src/components/pwa/register-sw.tsx) now only calls `serviceWorker.register()` when `NODE_ENV === "production"` — a standard, well-known pattern specifically to avoid this class of dev-mode confusion. The inline-style fix from bug #1's investigation was kept anyway (harmless, and now documented as defense-in-depth rather than the "real" fix it was first assumed to be).
+    3. A third, smaller, real bug found along the way: a "back online, auto-hide after 3s" transient message never actually hid (verified via an instrumented multi-timestamp test, not assumption). Rather than debug a third issue on top of two much bigger ones, cut it — the safety-critical part (the persistent offline warning) doesn't need it, and it wasn't worth the further time next to what had already been found.
+  - **Verified live, from a genuinely clean state**: unregistered the stale SW and cleared all caches, restarted the dev server, opened a fresh tab, confirmed zero console errors (no hydration error, no stale bundle), confirmed `navigator.serviceWorker.getRegistrations()` returns empty in dev, then simulated offline (`Object.defineProperty(navigator, 'onLine', ...)` + dispatched event) and confirmed the red banner renders correctly with real background/text/padding — and confirmed it correctly disappears on the online transition.
+  - Added `loading.tsx` skeletons for the five data-heavy routes (dashboard, rooms, bookings, guests, reports) as the performance-pass item — immediate visual feedback during server-component data fetching instead of a blank page.
+  - `next build` and `npm run lint` both clean.
+  - **Take-away worth remembering for any future session on this project**: if a code change appears to have zero effect despite the build succeeding and the dev server restarting — check for stale service-worker cache *before* doubting the code or chasing a CSS/build-tool theory. Compare a live element's actual `outerHTML`/behavior against current source first; that's what actually cracked this one, not more theorizing.
+
+---
+
+## 10. Implementation notes
+
+**Next.js 16 specifics** (scaffolded with 16.3 — its APIs differ from most training data, see `AGENTS.md`):
+- `middleware.ts` is renamed `proxy.ts` (nodejs runtime only, no edge). Ours lives at [src/proxy.ts](src/proxy.ts) and refreshes the Supabase session cookie on every request.
+- `params`, `searchParams`, `cookies()`, `headers()` are async-only now — always `await` them. See [src/app/(app)/rooms/[roomId]/page.tsx](src/app/(app)/rooms/[roomId]/page.tsx) for the pattern.
+- Turbopack is the default builder and `next build` **fails** if it finds a custom webpack config. This is why the PWA service worker is hand-rolled ([public/sw.js](public/sw.js)) instead of using `next-pwa` (a webpack plugin) — avoids a build-breaking conflict.
+- `images.domains` is deprecated in favor of `images.remotePatterns` — use this if/when we load remote images (guest ID photos, property logos, etc.).
+- Use `next typegen` to regenerate `PageProps<Route>` / `LayoutProps<Route>` helpers after adding routes.
+
+**Supabase auth wiring:**
+- [src/lib/supabase/client.ts](src/lib/supabase/client.ts) — browser client, Client Components.
+- [src/lib/supabase/server.ts](src/lib/supabase/server.ts) — server client, Server Components/Actions/Route Handlers (async, must be awaited).
+- [src/lib/supabase/database.types.ts](src/lib/supabase/database.types.ts) — generated via the Supabase MCP `generate_typescript_types` tool. **Regenerate after every migration** (both clients are typed with `Database` generic — a schema/function drift shows up as a TS build error, which is what caught the `bootstrap_property` type gap during Phase 2).
+- [src/proxy.ts](src/proxy.ts) — session-refresh proxy; also now the route guard (redirects signed-out users to `/login`, signed-in users away from it). Matcher excludes static assets/manifest/sw.
+- [src/lib/property.ts](src/lib/property.ts) — `getCurrentProperty()`, wrapped in React's `cache()` so the `(app)` layout and each page share one lookup per request. Returns `null` if signed out or has no property yet.
+- [src/app/(auth)/login/](src/app/(auth)/login/) — email/password sign-in/up, server actions in `actions.ts`.
+- [src/app/onboarding/](src/app/onboarding/) — first-property bootstrap form, calls the `bootstrap_property` RPC (§9).
+- [src/lib/queries/](src/lib/queries/) — read queries per module (`rooms.ts`, `dashboard.ts`, `bookings.ts`); each route's `actions.ts` has the write actions. Pattern to keep following: reads in `lib/queries/`, writes as colocated route `actions.ts` server actions.
+- **Every `<Select>` needs an explicit `items` map** (see the Base UI bug above) — `bookings/new/booking-form.tsx` and `rooms/room-forms.tsx` both do this; copy that pattern for any new dropdown backed by DB rows.
+- **Room status is a derived/simplified field, not the source of truth** — `bookings.status` + dates are what's real; `rooms.status` is kept in sync by the booking actions ([bookings/actions.ts](src/app/(app)/bookings/actions.ts)) as a fast board-glance value. Notably: a booking only flips its room to `reserved` at creation if `check_in_planned` is *today* — a booking made now for next month won't visually reserve the room until Phase 3 grows a same-day promotion job (or someone opens the booking). Dashboard/Bookings pages are unaffected since they query `bookings` directly, not `rooms.status`.
+- **Room workflow enforcement lives in `bookings/actions.ts` + `rooms/actions.ts`**, not the DB — Postgres enforces the double-booking constraint, but "checkout goes to cleaning, not available" and "release requires status = cleaning" are application-level guards (`.eq("status", "cleaning")` before the release update, etc.). If a future admin tool writes to `rooms.status` directly, it can bypass this — worth a DB trigger/check constraint if that becomes a real risk.
+
+**Pricing/GST (Phase 5):**
+- [src/lib/pricing.ts](src/lib/pricing.ts) — the only place GST/total math should live. `calculateBookingPricing()` is pure (no I/O), takes plain values, returns the full breakdown. Phase 6 (invoices) must import this, not reimplement it.
+- [src/lib/queries/pricing.ts](src/lib/queries/pricing.ts) — reads (`getTaxSettings`, `getBookingCharges`, `getPayments`). [bookings/pricing-actions.ts](src/app/(app)/bookings/pricing-actions.ts) — writes (`addBookingCharge`, `recordPayment`, `updateBookingPricing`), colocated under `bookings/` since they're booking-scoped even though the UI lives on the room detail page.
+- [settings/tax/](src/app/(app)/settings/tax/) — new top-level settings area, currently just tax config. If more settings get added later, this is the place to grow, not a new nav item — bottom nav is intentionally fixed at 5 per the mobile spec (§3).
+- Amount formatting: use the `Row` component's sign-then-`Math.abs()` pattern (`page.tsx` in `rooms/[roomId]/`) for any value that can go negative — a naive `₹${value.toFixed(2)}` prints `₹-2000.00` instead of `-₹2000.00`. Same pattern duplicated (small, page-local component both times) in the invoice page — if a third place needs it, promote it to a shared component instead of copying again.
+
+**Invoicing (Phase 6):**
+- [src/lib/invoicing.ts](src/lib/invoicing.ts) — `generateInvoiceForBooking(propertyId, bookingId)`, the only place an invoice row gets created. Always call this, never insert into `invoices` directly from a route.
+- Migration `0006_invoice_numbering.sql` — `invoices.property_id` (direct, not via `bookings`), `invoice_counters` (atomic per-property counter), `next_invoice_number()` RPC (numbering only — no pricing logic; that stays in `pricing.ts`).
+- [bookings/[bookingId]/invoice/](src/app/(app)/bookings/[bookingId]/invoice/) — printable invoice route. Live preview pre-generation, frozen stored values post-generation — don't make the post-generation view recompute live, that would defeat the point of an invoice being a snapshot.
+
+**Reports (Phase 7):**
+- [src/lib/queries/reports.ts](src/lib/queries/reports.ts) — one function per report section; all client-aggregated, see the file's own comment about moving to SQL if data volume ever demands it.
+- Date-range reports use a plain `?from=&to=` GET form (same pattern as New Booking's date step and Guests' search) — no client JS needed, server component re-fetches on navigation.
+- Not everything in `/reports` is date-ranged: occupancy and outstanding balances are current-state snapshots by design, not filtered by the picker. Don't "fix" this into range-filtering without first deciding what a historical occupancy/outstanding number would even mean (room-night tracking doesn't exist yet).
+
+**Schema/migrations** live in `supabase/migrations/` and are applied to the live `staydesk` project (§9):
+- `0001_init.sql` — full schema (§4). Notably: `bookings.stay_range` is a generated `daterange` column with a GiST exclusion constraint (`no_overlapping_bookings`) — double-booking is rejected at the database level, not just in the UI.
+- `0002_rls.sql` — RLS policies implementing the tenant-isolation model in §3. `internal.is_property_member()` / `internal.current_property_role()` are the two helper functions every policy is built on.
+- `0003_security_hardening.sql`, `0004_fix_rls_helper_exposure.sql` — advisor-driven fixes; see §9 for what broke and why.
+
+**App structure:**
+- `src/app/(app)/` route group holds all five operational modules behind the shared shell in `layout.tsx` (side nav desktop, [BottomNav](src/components/nav/bottom-nav.tsx) mobile per §3's Home/Rooms/+Booking/Guests/More).
+- Root `/` redirects straight to `/dashboard`.
+- Every module page is currently a placeholder stub with a comment pointing at the build phase (§6) that fills it in — replace stub content in place, don't restructure routes, as phases land.
+
+**Guests module** ([src/app/(app)/guests/](src/app/(app)/guests/)): list + search (`?q=`, matches name or phone via `ilike`), inline add form, detail page with an always-editable contact form and a real stay-history list pulled from `bookings`. `guests_rw` RLS is open to any property member (unlike rooms/room_types, which are owner/admin-only) — front desk needs to manage guest records day to day.
+
+**PWA (Phase 8):**
+- [public/icons/](public/icons/) — `icon-192.png`, `icon-512.png`, `icon-512-maskable.png`, `apple-touch-icon.png` are real, hand-built PNGs (see §9). `icon.svg` from Phase 1 is now unreferenced dead weight — safe to delete, kept only because nothing currently breaks by its presence.
+- [src/components/pwa/register-sw.tsx](src/components/pwa/register-sw.tsx) registers the service worker **in production only**. Don't remove that `NODE_ENV` gate — see §9 for exactly what goes wrong in dev without it. To test SW/offline behavior locally, use `next build && next start`, not `next dev`.
+- [src/components/pwa/connectivity-banner.tsx](src/components/pwa/connectivity-banner.tsx) uses `useSyncExternalStore`, not a `useState`+effect pair, for `navigator.onLine` — that's deliberate (see §9's hydration bug). Follow that pattern for any future browser-only-state component in this app.
+
+**Known placeholders to swap before production:**
+- Package name is `stay` (npm forbids capitals — the folder is `Stay`, unrelated).
+
+## 11. Changelog
+
+- **2026-08-07** — Initial doc created from source PDF + architecture decisions (multi-tenant, Supabase, PWA).
+- **2026-08-07** — Confirmed frontend stack (Next.js + Tailwind + shadcn/ui + Vercel) and offline-write strategy (queue + sync); expanded §5 PWA requirements with outbox/conflict-handling notes.
+- **2026-08-07** — Scaffolded the Next.js 16 app (App Router, TS, Tailwind v4, src dir), moved it into the project root. Added Supabase client/server/proxy helpers, initial schema + RLS migrations, hand-rolled PWA (manifest + service worker + offline page), and placeholder routes/nav for all five modules.
+- **2026-08-07** — shadcn/ui initialized; added button, card, badge, tabs, separator, input, label, select components. Verified `npm run build` and `npm run lint` both pass clean. Smoke-tested in-browser at mobile and desktop widths: side nav / bottom nav both render correctly, room board and room-detail (`/rooms/[roomId]`, exercising the async `params` pattern) work, manifest + service worker both serve 200 and the SW registers. Added `.claude/launch.json` (`npm run dev` on port 3000) for future previews.
+- **2026-08-07** — Clarified Hostinger's role (domain/DNS only) and confirmed access status across Supabase/GitHub/Vercel/Hostinger. Provisioned the live Supabase project: reused the existing empty `staydesk` project (org's free-tier cap was already hit by 2 other projects), applied all four migrations, caught and fixed a self-introduced RLS-breaking bug from advisor-driven hardening (§9), and verified end-to-end against the real project — anon tenant isolation (`200 []`), the RPC surface closed off (`404`), the overlap constraint still enforcing after the extension move, and a clean `next build` against live credentials. Security advisor: 0 warnings. Phase 1 (Foundation) is now functionally complete on the backend side; Phase 2 (Rooms + Dashboard live data) is next.
+- **2026-08-07** — Phase 2: built real auth (email/password, `proxy.ts`-gated), a `bootstrap_property` RPC to solve the onboarding RLS chicken-and-egg problem (§9), and wired Dashboard + Rooms to live Supabase queries with owner/admin-gated room-type/room creation forms. Verified the entire flow live in-browser end-to-end (signup → confirm via SQL, no inbox access here → sign-in → onboarding → dashboard/rooms with real data → created a room type and room through the actual UI, watched the room board and dashboard counts update), then deleted all the test data back to 0 rows. Found and fixed a real bug along the way: Base UI's `Select` doesn't auto-resolve labels from declarative `<SelectItem>` children, so the room-type picker was showing raw UUIDs until an explicit `items` map was added — caught by actually reading the rendered page, not just by the build passing. `next build` and `npm run lint` both clean.
+- **2026-08-07** — Phase 3: built Bookings — a two-step New Booking flow (dates first, filtering room choices to genuinely available ones; then guest-select-or-quick-add + room + confirm), check-in/check-out/cancel/extend actions that keep `rooms.status` and a `room_status_log` audit trail in sync with the workflow rule from §1, and a housekeeping Release button on the room board. Verified live end-to-end: overlap-safe booking creation, the UX availability filter correctly excluding an already-booked room, guest reuse across bookings, and the full `reserved → occupied → cleaning → available` cycle with real timestamps in the audit log — then cleaned up to 0 rows. Documented one real, stated gap: the DB-level overlap-rejection error path is proven at the SQL layer (Phase 1) but wasn't re-exercised through a live race condition in the UI. `next build` and `npm run lint` both clean.
+- **2026-08-08** — Phase 4: built Guests — list with name/phone search, inline add form, detail page with editable contact info and real stay history. While testing live, hit a real bug: the service worker's cache-first strategy (written in Phase 1's PWA scaffold) was serving the wrong route's content on navigation, because it cached Next.js's dynamic RSC fetches as if they were static — and this app has no page that's ever safe to cache, since everything is dynamic and RLS-scoped per property. Rewrote `public/sw.js` to cache only content-hashed static assets and go network-only for every navigation and data fetch; verified the fix by clearing registrations/caches and confirming correct, stable rendering across repeat navigation. Notable: this bug shipped in Phase 2 and went undetected through all of Phase 2/3's live testing — only surfaced now because Phase 4's testing happened to navigate routes in an order that exposed it. Full Guests flow (create → search → edit → stay history) verified live, cleaned up to 0 rows. `next build` and `npm run lint` both clean.
+- **2026-08-08** — Phase 5: built the pricing/GST engine (`src/lib/pricing.ts`, a pure single-source-of-truth module verified against the source spec's own worked example before any UI existed), wired it into the room detail page with a full live breakdown, and added rate-override/discount editing, add-charge (taxable or not), and Receive Payment (now functional, no longer a placeholder). Added a `/settings/tax` page for owner/admin GST configuration. Verified every math path live: the base case, the discount case (exact match to the spec's 6500/780/7280/5280 example), a payment recorded against it, the CGST+SGST ↔ IGST toggle switching live on the same total, and a non-taxable charge correctly bypassing the GST base while still hitting the grand total. Found and fixed one minor bug (a payment showing as `₹-2000.00` instead of `-₹2000.00`) via the sign-then-abs formatting pattern. Also hit the Phase-4-style dev-router desync twice more — reconfirmed each time it's a Turbopack dev/automation artifact independent of the (already-fixed) service worker, not a regression. Cleaned up to 0 rows. `next build` and `npm run lint` both clean.
+- **2026-08-08** — Phase 6: built Invoices. Closed a schema gap first (`invoices` gained a direct `property_id`, matching every other table's tenant-boundary pattern, plus RLS updated to match) and added a per-property atomic invoice-numbering counter (`invoice_counters` + `next_invoice_number()` RPC — numbering only, no pricing math, which stays exclusively in `pricing.ts`). `generateInvoiceForBooking()` now runs automatically (best-effort) on every checkout, and the new printable invoice page shows a live preview pre-generation or the frozen stored values post-generation. Verified live end-to-end with the exact same inputs as Phase 5's worked example — checked out a discounted 2-night booking and got `INV-0001` with taxable value 6500 / CGST+SGST 390 each / total 7280, matching the DB row exactly; checked out a second, different booking and confirmed `INV-0002` (3920 total), proving the counter increments correctly per property across separate bookings. Cleaned up to 0 rows, including `invoice_counters`. Noted one real workflow gap (not fixed this phase): `listAvailableRooms` doesn't exclude rooms still awaiting a cleaning release, so a room can technically be re-booked for today before housekeeping confirms it's ready — the date-overlap constraint still prevents actual double-booking, but the workflow gap is real. `next build` and `npm run lint` both clean.
+- **2026-08-08** — Phase 7: built Reports — revenue by payment mode, GST/taxable-sales summary, arrivals/departures, a live occupancy snapshot, and outstanding balances, with a date-range picker for the historically-scoped sections. Verified live end-to-end: confirmed all-zero empty states first, then a partial payment against a checked-in booking produced exactly the right outstanding balance via the live-pricing path, checkout moved that same number onto the frozen-invoice path with an identical result (proving both branches agree), and switching the date range actually narrowed arrivals/departures/revenue/GST while correctly leaving the unfiltered-by-design sections (occupancy, outstanding) unchanged. Cleaned up to 0 rows. `next build` and `npm run lint` both clean. V1 feature list (§7) is now fully built.
+- **2026-08-08** — Phase 8: PWA polish, the last roadmap phase. Re-confirmed the offline-write scope with the user first (queue-and-sync → online-only with a connectivity indicator, a deliberate reversal of §2's original call). Generated real PNG icons (hand-built via a small zlib-based script, no image-library dependency) to replace the SVG-only Phase 1 placeholder, fixing real iOS installability. Built `ConnectivityBanner`, which surfaced two real bugs in quick succession — a genuine SSR/hydration bug (Node's SSR runtime has a bare `navigator` global that made a `typeof navigator !== "undefined"` guard lie), fixed with `useSyncExternalStore`; and then, much bigger, discovered the project's own service worker was still registering in `next dev` and cache-first'ing `/_next/static/*`, silently serving stale JavaScript across every fresh tab and full server restart for the rest of the phase — root-caused by comparing a live element's `outerHTML` against current source (not more theorizing about Tailwind/CSS), fixed at the source by gating SW registration to production only. A third small bug (a "back online" auto-hide timer that never actually hid) was found and deliberately cut rather than chased further. Added `loading.tsx` skeletons for the five data-heavy routes as the performance-pass item. Verified live from a genuinely clean state (unregistered SW, cleared caches, fresh tab, zero console errors) that the offline banner renders and clears correctly. `next build` and `npm run lint` both clean. **All 8 roadmap phases are now complete.**
