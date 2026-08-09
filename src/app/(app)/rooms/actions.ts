@@ -61,6 +61,42 @@ export async function createRoom(
   return { error: null };
 }
 
+// rooms_update RLS (0002_rls.sql) intentionally allows any property member
+// to update a room, since front_desk/housekeeping need to change *status*.
+// Editing the room master (number/floor/type) is owner/admin only, same as
+// create/delete — enforced here at the app level, matching the pattern
+// already used for the checkout/release workflow guards (PROJECT.md §10).
+export async function updateRoom(
+  _prevState: RoomActionState,
+  formData: FormData
+): Promise<RoomActionState> {
+  const property = await getCurrentProperty();
+  if (!property) return { error: "No property found." };
+  if (property.role !== "owner" && property.role !== "admin") {
+    return { error: "Only owner/admin can edit rooms." };
+  }
+
+  const roomId = String(formData.get("roomId") ?? "");
+  const number = String(formData.get("number") ?? "").trim();
+  const floor = String(formData.get("floor") ?? "").trim();
+  const roomTypeId = String(formData.get("roomTypeId") ?? "");
+  if (!roomId || !number || !roomTypeId) {
+    return { error: "Room number and type are required." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("rooms")
+    .update({ number, floor: floor || null, room_type_id: roomTypeId })
+    .eq("id", roomId)
+    .eq("property_id", property.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/rooms");
+  revalidatePath(`/rooms/${roomId}`);
+  return { error: null };
+}
+
 // Room workflow (PROJECT.md §1): Occupied -> Checkout -> Cleaning ->
 // Available. This is the explicit housekeeping release step — a checked-out
 // room never flips to Available on its own. Any property member can do

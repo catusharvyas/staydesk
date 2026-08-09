@@ -4,12 +4,13 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentProperty } from "@/lib/property";
-import { getRoomWithType } from "@/lib/queries/rooms";
+import { getRoomWithType, listRoomTypes } from "@/lib/queries/rooms";
 import { getActiveBookingForRoom } from "@/lib/queries/bookings";
 import { getBookingCharges, getPayments, getTaxSettings } from "@/lib/queries/pricing";
 import { calculateBookingPricing, nightsBetween } from "@/lib/pricing";
 import { CheckInButton, CheckOutButton, ExtendStayForm } from "./room-actions";
 import { AddChargeForm, RateDiscountForm, RecordPaymentForm } from "./pricing-forms";
+import { EditRoomForm } from "./edit-room-form";
 
 export default async function RoomDetailPage({
   params,
@@ -21,6 +22,9 @@ export default async function RoomDetailPage({
 
   const room = await getRoomWithType(property.id, roomId);
   if (!room) notFound();
+
+  const canManage = property.role === "owner" || property.role === "admin";
+  const roomTypes = canManage ? await listRoomTypes(property.id) : [];
 
   const booking = await getActiveBookingForRoom(property.id, roomId);
 
@@ -65,6 +69,15 @@ export default async function RoomDetailPage({
         {room.room_types?.base_rate != null &&
           ` · ₹${room.room_types.base_rate}/night`}
       </p>
+
+      {canManage && (
+        <div className="mt-3">
+          <EditRoomForm
+            room={{ id: room.id, number: room.number, floor: room.floor, room_type_id: room.room_type_id }}
+            roomTypes={roomTypes.map((rt) => ({ id: rt.id, name: rt.name }))}
+          />
+        </div>
+      )}
 
       {booking ? (
         <div className="mt-4 flex flex-col gap-4">

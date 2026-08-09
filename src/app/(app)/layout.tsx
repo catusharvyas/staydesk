@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { SideNav } from "@/components/nav/side-nav";
 import { BottomNav } from "@/components/nav/bottom-nav";
+import { MobileHeader } from "@/components/nav/mobile-header";
 import { getCurrentProperty } from "@/lib/property";
 
 /**
@@ -23,9 +24,10 @@ export default async function AppLayout({
   return (
     <div className="flex min-h-dvh flex-1">
       <SideNav />
-      <main className="flex-1 overflow-x-hidden pb-16 md:pb-0">
-        {children}
-      </main>
+      <div className="flex flex-1 flex-col overflow-x-hidden">
+        <MobileHeader />
+        <main className="flex-1 pb-16 md:pb-0">{children}</main>
+      </div>
       <BottomNav />
     </div>
   );
