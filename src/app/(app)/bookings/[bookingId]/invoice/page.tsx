@@ -72,7 +72,17 @@ export default async function InvoicePage({
         <Link href="/bookings" className="text-sm text-muted-foreground hover:underline">
           ← Bookings
         </Link>
-        <PrintButton />
+        <div className="flex gap-2">
+          {invoice && (
+            <a
+              href={`/bookings/${bookingId}/invoice/pdf`}
+              className="inline-flex h-8 items-center rounded-lg border px-2.5 text-sm hover:bg-muted"
+            >
+              Download PDF
+            </a>
+          )}
+          <PrintButton />
+        </div>
       </div>
 
       <div className="rounded-lg border p-6 print:border-none">
