@@ -237,6 +237,92 @@ export async function cancelBooking(
   return { error: null };
 }
 
+// Scoped to 'reserved' bookings only — deliberately not a mid-stay "room
+// move" for checked_in bookings, which would also need to juggle the old
+// room back out of 'occupied' safely. This covers the actual reported
+// need ("front desk picked the wrong room/guest") without that added
+// complexity; a real room-move feature can be a separate future addition
+// if it turns out to be needed.
+export async function editBooking(
+  _prevState: BookingActionState,
+  formData: FormData
+): Promise<BookingActionState> {
+  const property = await getCurrentProperty();
+  if (!property) return { error: "No property found." };
+
+  const bookingId = String(formData.get("bookingId") ?? "");
+  const roomId = String(formData.get("roomId") ?? "");
+  const rawGuestId = String(formData.get("guestId") ?? "");
+  const guestId = rawGuestId === "__new__" ? "" : rawGuestId;
+  const guestName = String(formData.get("guestName") ?? "").trim();
+  const guestPhone = String(formData.get("guestPhone") ?? "").trim();
+
+  if (!bookingId || !roomId) return { error: "Missing booking or room." };
+  if (!guestId && !guestName) return { error: "Select a guest or enter a name for a new one." };
+
+  const supabase = await createClient();
+
+  const { data: booking, error: fetchError } = await supabase
+    .from("bookings")
+    .select("id, room_id, status, check_in_planned")
+    .eq("id", bookingId)
+    .eq("property_id", property.id)
+    .maybeSingle();
+  if (fetchError || !booking) return { error: fetchError?.message ?? "Booking not found." };
+  if (booking.status !== "reserved") {
+    return { error: "Only reserved (not yet checked-in) bookings can be edited." };
+  }
+
+  let resolvedGuestId = guestId;
+  if (!resolvedGuestId) {
+    const { data: guest, error: guestError } = await supabase
+      .from("guests")
+      .insert({ property_id: property.id, name: guestName, phone: guestPhone || null })
+      .select("id")
+      .single();
+    if (guestError) return { error: guestError.message };
+    resolvedGuestId = guest.id;
+  }
+
+  const oldRoomId = booking.room_id;
+  const roomChanged = roomId !== oldRoomId;
+
+  const { error: updateError } = await supabase
+    .from("bookings")
+    .update({ guest_id: resolvedGuestId, room_id: roomId })
+    .eq("id", bookingId);
+
+  if (updateError) {
+    if (isOverlapViolation(updateError)) {
+      return { error: "That room is already booked for those dates." };
+    }
+    return { error: updateError.message };
+  }
+
+  // Keep the room-board badge in sync — same "reserved only if arriving
+  // today" rule createBooking uses. Only touch rooms.status if the room
+  // actually changed; guest-only edits shouldn't move anything.
+  if (roomChanged) {
+    await supabase
+      .from("rooms")
+      .update({ status: "available" })
+      .eq("id", oldRoomId)
+      .eq("status", "reserved");
+
+    const today = new Date().toISOString().slice(0, 10);
+    if (booking.check_in_planned === today) {
+      await supabase
+        .from("rooms")
+        .update({ status: "reserved" })
+        .eq("id", roomId)
+        .eq("status", "available");
+    }
+  }
+
+  revalidateAll();
+  return { error: null };
+}
+
 export async function extendStay(
   _prevState: BookingActionState,
   formData: FormData

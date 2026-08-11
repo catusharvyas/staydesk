@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentProperty } from "@/lib/property";
-import { listBookings } from "@/lib/queries/bookings";
+import { listBookings, listAvailableRooms, listGuests } from "@/lib/queries/bookings";
 import { BookingRowActions } from "./booking-actions-inline";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -18,6 +18,26 @@ export default async function BookingsPage() {
   if (!property) redirect("/onboarding");
 
   const bookings = await listBookings(property.id);
+
+  // Room/guest options for the Edit form — only needed for reserved
+  // bookings (the only ones editable), so skip the extra queries for
+  // everything else. Fine at single-property data volumes; see reports.ts
+  // for the same reasoning on a similar per-row query pattern.
+  const reserved = bookings.filter((b) => b.status === "reserved");
+  const [guests, roomOptionsByBooking] = await Promise.all([
+    reserved.length > 0 ? listGuests(property.id) : Promise.resolve([]),
+    Promise.all(
+      reserved.map((b) =>
+        listAvailableRooms(property.id, b.check_in_planned, b.check_out_planned, b.id)
+      )
+    ),
+  ]);
+  const roomsByBookingId = new Map(
+    reserved.map((b, i) => [
+      b.id,
+      roomOptionsByBooking[i].map((r) => ({ id: r.id, number: r.number, typeName: r.room_types?.name ?? "" })),
+    ])
+  );
 
   return (
     <div className="p-4 md:p-6">
@@ -53,7 +73,14 @@ export default async function BookingsPage() {
                     Invoice
                   </Link>
                 )}
-                <BookingRowActions bookingId={b.id} status={b.status} />
+                <BookingRowActions
+                  bookingId={b.id}
+                  status={b.status}
+                  currentGuestId={b.guest_id}
+                  currentRoomId={b.room_id}
+                  guests={guests}
+                  rooms={roomsByBookingId.get(b.id) ?? []}
+                />
               </div>
             </li>
           ))}

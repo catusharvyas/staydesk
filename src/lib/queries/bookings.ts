@@ -63,13 +63,29 @@ export async function listGuests(propertyId: string) {
  * UI only offers rooms that will actually pass it. This is a UX filter, not
  * the source of truth: the constraint is what actually prevents a
  * double-booking if two people submit at once.
+ *
+ * `excludeBookingId` is for editing an existing reserved booking's room —
+ * without it, the booking's own current room would show as "conflicting"
+ * with itself (its own stay_range overlaps its own dates).
  */
 export async function listAvailableRooms(
   propertyId: string,
   checkIn: string,
-  checkOut: string
+  checkOut: string,
+  excludeBookingId?: string
 ) {
   const supabase = await createClient();
+
+  let conflictsQuery = supabase
+    .from("bookings")
+    .select("room_id")
+    .eq("property_id", propertyId)
+    .in("status", ACTIVE_STATUSES)
+    .lt("check_in_planned", checkOut)
+    .gt("check_out_planned", checkIn);
+  if (excludeBookingId) {
+    conflictsQuery = conflictsQuery.neq("id", excludeBookingId);
+  }
 
   const [{ data: rooms, error: roomsError }, { data: conflicts, error: conflictsError }] =
     await Promise.all([
@@ -78,13 +94,7 @@ export async function listAvailableRooms(
         .select("id, number, room_types(name)")
         .eq("property_id", propertyId)
         .order("number"),
-      supabase
-        .from("bookings")
-        .select("room_id")
-        .eq("property_id", propertyId)
-        .in("status", ACTIVE_STATUSES)
-        .lt("check_in_planned", checkOut)
-        .gt("check_out_planned", checkIn),
+      conflictsQuery,
     ]);
 
   if (roomsError) throw roomsError;

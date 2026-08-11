@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,6 +9,7 @@ import {
   cancelBooking,
   type BookingActionState,
 } from "./actions";
+import { EditBookingForm } from "./edit-booking-form";
 
 const INITIAL_STATE: BookingActionState = { error: null };
 
@@ -36,14 +38,41 @@ function ActionForm({
 export function BookingRowActions({
   bookingId,
   status,
+  currentGuestId,
+  currentRoomId,
+  guests,
+  rooms,
 }: {
   bookingId: string;
   status: string;
+  currentGuestId: string;
+  currentRoomId: string;
+  guests: { id: string; name: string; phone: string | null }[];
+  rooms: { id: string; number: string; typeName: string }[];
 }) {
+  const [editing, setEditing] = useState(false);
+
   if (status === "reserved") {
+    if (editing) {
+      return (
+        <div className="w-full">
+          <EditBookingForm
+            bookingId={bookingId}
+            currentGuestId={currentGuestId}
+            currentRoomId={currentRoomId}
+            guests={guests}
+            rooms={rooms}
+            onClose={() => setEditing(false)}
+          />
+        </div>
+      );
+    }
     return (
       <div className="flex gap-2">
         <ActionForm action={checkInBooking} bookingId={bookingId} label="Check in" />
+        <Button type="button" size="sm" variant="outline" onClick={() => setEditing(true)}>
+          Edit
+        </Button>
         <ActionForm action={cancelBooking} bookingId={bookingId} label="Cancel" />
       </div>
     );
