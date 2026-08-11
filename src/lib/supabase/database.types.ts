@@ -135,6 +135,7 @@ export type Database = {
           id_proof_number: string | null
           id_proof_type: string | null
           name: string
+          nationality: string | null
           notes: string | null
           phone: string | null
           property_id: string
@@ -147,6 +148,7 @@ export type Database = {
           id_proof_number?: string | null
           id_proof_type?: string | null
           name: string
+          nationality?: string | null
           notes?: string | null
           phone?: string | null
           property_id: string
@@ -159,6 +161,7 @@ export type Database = {
           id_proof_number?: string | null
           id_proof_type?: string | null
           name?: string
+          nationality?: string | null
           notes?: string | null
           phone?: string | null
           property_id?: string
