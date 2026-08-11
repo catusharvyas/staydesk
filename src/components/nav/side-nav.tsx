@@ -24,7 +24,7 @@ export function SideNav() {
             href={item.href}
             className={`rounded-md px-2 py-1.5 text-sm ${
               active
-                ? "bg-muted font-medium text-foreground"
+                ? "bg-primary/10 font-medium text-primary"
                 : "text-muted-foreground hover:bg-muted"
             }`}
           >
