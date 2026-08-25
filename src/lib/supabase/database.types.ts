@@ -322,6 +322,7 @@ export type Database = {
           org_id: string
           pan: string | null
           state_code: string | null
+          theme: string
           timezone: string
         }
         Insert: {
@@ -337,6 +338,7 @@ export type Database = {
           org_id: string
           pan?: string | null
           state_code?: string | null
+          theme?: string
           timezone?: string
         }
         Update: {
@@ -352,6 +354,7 @@ export type Database = {
           org_id?: string
           pan?: string | null
           state_code?: string | null
+          theme?: string
           timezone?: string
         }
         Relationships: [

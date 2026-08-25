@@ -9,6 +9,8 @@ import Link from "next/link";
 import { getCurrentProperty } from "@/lib/property";
 import { PropertySettingsForm } from "./property-settings-form";
 import { LogoForm } from "./logo-form";
+import { ThemeForm } from "./theme-form";
+import { resolveTheme } from "@/lib/theme-presets";
 
 export default async function PropertySettingsPage() {
   const property = await getCurrentProperty();
@@ -39,6 +41,9 @@ export default async function PropertySettingsPage() {
       </p>
       <div className="mt-4">
         <LogoForm logoPath={property.logo_path} />
+      </div>
+      <div className="mt-6 border-t pt-6">
+        <ThemeForm theme={resolveTheme(property.theme)} />
       </div>
       <div className="mt-6 border-t pt-6">
         <PropertySettingsForm property={property} />

@@ -125,6 +125,61 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* ── Per-property accent presets ───────────────────────────────────────────
+   Set as data-theme on <html> by the root layout (src/app/layout.tsx) from
+   properties.theme. On <html> specifically, not a wrapper div, because
+   Base UI's Select renders its popup through a Portal attached to
+   document.body — a scoped wrapper would leave portalled UI unthemed.
+
+   Each preset overrides only --primary/--ring, the same two tokens the
+   original "neutral + accent" direction introduced; the rest of the palette
+   stays grayscale so the accent keeps meaning something.
+
+   Lightness is fixed at 0.546 (light) / 0.623 (dark) across every hue — in
+   oklch that holds *perceived* lightness constant, so white --primary-
+   foreground text keeps roughly the same contrast whichever hue is picked.
+   Chroma varies per hue only because sRGB's gamut does; these are each hue's
+   maximum at that lightness, capped at the blue's 0.245/0.214.
+
+   "blue" restates :root's values rather than being absent, so the default is
+   explicit and greppable alongside the rest. Verified: it is byte-identical
+   to the :root/.dark values above, so the default look is unchanged. */
+
+[data-theme="blue"] { --primary: oklch(0.546 0.245 262.881); --ring: oklch(0.546 0.245 262.881); }
+.dark[data-theme="blue"] { --primary: oklch(0.623 0.214 259.815); --ring: oklch(0.623 0.214 259.815); }
+
+[data-theme="sky"] { --primary: oklch(0.546 0.116 235); --ring: oklch(0.546 0.116 235); }
+.dark[data-theme="sky"] { --primary: oklch(0.623 0.132 235); --ring: oklch(0.623 0.132 235); }
+
+[data-theme="indigo"] { --primary: oklch(0.546 0.245 285); --ring: oklch(0.546 0.245 285); }
+.dark[data-theme="indigo"] { --primary: oklch(0.623 0.213 285); --ring: oklch(0.623 0.213 285); }
+
+[data-theme="violet"] { --primary: oklch(0.546 0.245 300); --ring: oklch(0.546 0.245 300); }
+.dark[data-theme="violet"] { --primary: oklch(0.623 0.214 300); --ring: oklch(0.623 0.214 300); }
+
+[data-theme="purple"] { --primary: oklch(0.546 0.245 320); --ring: oklch(0.546 0.245 320); }
+.dark[data-theme="purple"] { --primary: oklch(0.623 0.214 320); --ring: oklch(0.623 0.214 320); }
+
+[data-theme="magenta"] { --primary: oklch(0.546 0.237 340); --ring: oklch(0.546 0.237 340); }
+.dark[data-theme="magenta"] { --primary: oklch(0.623 0.214 340); --ring: oklch(0.623 0.214 340); }
+
+[data-theme="rose"] { --primary: oklch(0.546 0.224 355); --ring: oklch(0.546 0.224 355); }
+.dark[data-theme="rose"] { --primary: oklch(0.623 0.214 355); --ring: oklch(0.623 0.214 355); }
+
+/* Neutral is the one preset that must also flip --primary-foreground: it
+   returns the app to the original grayscale spec, where the dark-mode
+   "accent" is near-white and therefore needs dark text on it, not white. */
+[data-theme="neutral"] {
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.556 0 0);
+}
+.dark[data-theme="neutral"] {
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --ring: oklch(0.556 0 0);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

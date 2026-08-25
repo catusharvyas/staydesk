@@ -10,6 +10,7 @@ import {
   LOGO_MIME_TYPES,
   extensionForMime,
 } from "@/lib/property-logo";
+import { resolveTheme } from "@/lib/theme-presets";
 
 export type PropertyActionState = { error: string | null; saved: boolean };
 
@@ -128,6 +129,42 @@ export async function updateProperty(
   // Invoices render the property header (name/legal name/address/GSTIN),
   // so a change here has to invalidate them too.
   revalidatePath("/bookings", "layout");
+  return { error: null, saved: true };
+}
+
+export type ThemeActionState = { error: string | null; saved: boolean };
+
+/**
+ * Sets the property's accent preset. The value is narrowed through
+ * resolveTheme() rather than written straight from the form: `theme` selects
+ * a CSS block by name, and the DB's CHECK constraint would reject an unknown
+ * key anyway — this just turns that into a clean fallback instead of a raw
+ * constraint-violation message.
+ */
+export async function updatePropertyTheme(
+  _prevState: ThemeActionState,
+  formData: FormData
+): Promise<ThemeActionState> {
+  const property = await getCurrentProperty();
+  if (!property) return { error: "No property found.", saved: false };
+  if (property.role !== "owner" && property.role !== "admin") {
+    return { error: "Only owners and admins can change the theme.", saved: false };
+  }
+
+  const theme = resolveTheme(String(formData.get("theme") ?? ""));
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("properties")
+    .update({ theme })
+    .eq("id", property.id);
+  if (error) return { error: error.message, saved: false };
+
+  // The accent is applied from the ROOT layout (it has to be on <html> for
+  // portalled UI), so revalidating just this route would leave every other
+  // page still painted in the old colour. "layout" scope from the root path
+  // is what actually repaints the whole app.
+  revalidatePath("/", "layout");
   return { error: null, saved: true };
 }
 
