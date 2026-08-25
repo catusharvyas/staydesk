@@ -1,7 +1,3 @@
-// Generated from the live `staydesk` Supabase project (ref znieiphiixdzjrkaozlb)
-// via the Supabase MCP `generate_typescript_types` tool. Regenerate after
-// every schema migration — do not hand-edit.
-
 export type Json =
   | string
   | number
@@ -315,34 +311,43 @@ export type Database = {
       properties: {
         Row: {
           address: string | null
+          cin: string | null
           created_at: string
           currency: string
           gstin: string | null
           id: string
+          legal_name: string | null
           name: string
           org_id: string
+          pan: string | null
           state_code: string | null
           timezone: string
         }
         Insert: {
           address?: string | null
+          cin?: string | null
           created_at?: string
           currency?: string
           gstin?: string | null
           id?: string
+          legal_name?: string | null
           name: string
           org_id: string
+          pan?: string | null
           state_code?: string | null
           timezone?: string
         }
         Update: {
           address?: string | null
+          cin?: string | null
           created_at?: string
           currency?: string
           gstin?: string | null
           id?: string
+          legal_name?: string | null
           name?: string
           org_id?: string
+          pan?: string | null
           state_code?: string | null
           timezone?: string
         }

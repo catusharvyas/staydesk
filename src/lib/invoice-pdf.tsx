@@ -41,7 +41,14 @@ function money(n: number) {
 }
 
 export type InvoicePdfProps = {
-  property: { name: string; address: string | null; gstin: string | null };
+  property: {
+    name: string;
+    legalName: string | null;
+    address: string | null;
+    gstin: string | null;
+    pan: string | null;
+    cin: string | null;
+  };
   invoiceNumber: string;
   issuedAt: string;
   guest: { name: string; phone: string | null; email: string | null };
@@ -68,9 +75,16 @@ function InvoiceDocument(props: InvoicePdfProps) {
       <Page size="A4" style={styles.page}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.propertyName}>{property.name}</Text>
+            {/* Mirrors the HTML invoice page's header exactly — legal entity
+                is the supplier of record, property name is the trading name. */}
+            <Text style={styles.propertyName}>{property.legalName || property.name}</Text>
+            {property.legalName && property.legalName !== property.name && (
+              <Text style={styles.muted}>{property.name}</Text>
+            )}
             {property.address && <Text style={styles.muted}>{property.address}</Text>}
             {property.gstin && <Text style={styles.muted}>GSTIN: {property.gstin}</Text>}
+            {property.pan && <Text style={styles.muted}>PAN: {property.pan}</Text>}
+            {property.cin && <Text style={styles.muted}>CIN: {property.cin}</Text>}
           </View>
           <View>
             <Text style={styles.invoiceTitle}>Tax Invoice</Text>
@@ -92,8 +106,13 @@ function InvoiceDocument(props: InvoicePdfProps) {
               Room {room.number}
               {room.typeName ? ` · ${room.typeName}` : ""}
             </Text>
+            {/* En dash, not the HTML page's "→": these PDFs use the standard
+                Helvetica face, whose WinAnsiEncoding has no U+2192, so an
+                arrow renders as a stray glyph. The en dash (0x96) is in
+                WinAnsi and reads the same. Any future glyph added here must
+                be WinAnsi-safe unless a font gets embedded. */}
             <Text style={styles.muted}>
-              {props.checkIn} {"→"} {props.checkOut}
+              {props.checkIn} {"–"} {props.checkOut}
             </Text>
           </View>
         </View>

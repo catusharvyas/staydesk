@@ -88,9 +88,20 @@ export default async function InvoicePage({
       <div className="rounded-lg border p-6 print:border-none">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-lg font-semibold">{property.name}</h1>
-            {property.address && <p className="text-sm text-muted-foreground">{property.address}</p>}
+            {/* The legal entity is the supplier of record on a tax invoice;
+                the property name is the trading name guests recognise. Show
+                both when they differ, and fall back to the property name
+                alone when no legal entity has been set. */}
+            <h1 className="text-lg font-semibold">{property.legal_name || property.name}</h1>
+            {property.legal_name && property.legal_name !== property.name && (
+              <p className="text-sm text-muted-foreground">{property.name}</p>
+            )}
+            {property.address && (
+              <p className="whitespace-pre-line text-sm text-muted-foreground">{property.address}</p>
+            )}
             {property.gstin && <p className="text-sm text-muted-foreground">GSTIN: {property.gstin}</p>}
+            {property.pan && <p className="text-sm text-muted-foreground">PAN: {property.pan}</p>}
+            {property.cin && <p className="text-sm text-muted-foreground">CIN: {property.cin}</p>}
           </div>
           <div className="text-right">
             <p className="font-medium">Tax Invoice</p>

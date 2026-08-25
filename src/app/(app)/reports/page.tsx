@@ -58,9 +58,14 @@ export default async function ReportsPage({
     <div className="p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">Payments &amp; Reports</h1>
-        <Link href="/settings/tax" className="text-sm underline">
-          Tax settings →
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/settings/property" className="text-sm underline">
+            Property details →
+          </Link>
+          <Link href="/settings/tax" className="text-sm underline">
+            Tax settings →
+          </Link>
+        </div>
       </div>
 
       <form method="get" className="mt-4 flex flex-wrap items-end gap-2">

@@ -40,7 +40,14 @@ export async function GET(
   const roomCharge = invoice.taxable_value - taxableCharges;
 
   const pdfBuffer = await renderInvoicePdf({
-    property: { name: property.name, address: property.address, gstin: property.gstin },
+    property: {
+      name: property.name,
+      legalName: property.legal_name,
+      address: property.address,
+      gstin: property.gstin,
+      pan: property.pan,
+      cin: property.cin,
+    },
     invoiceNumber: invoice.invoice_number,
     issuedAt: invoice.issued_at,
     guest: {

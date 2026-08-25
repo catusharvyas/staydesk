@@ -2,6 +2,7 @@
 // can be updated when tax rules change (PROJECT.md §5). Owner/admin only,
 // enforced by tax_settings_write RLS.
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getCurrentProperty } from "@/lib/property";
 import { getTaxSettings } from "@/lib/queries/pricing";
 import { TaxSettingsForm } from "./tax-settings-form";
@@ -35,7 +36,12 @@ export default async function TaxSettingsPage() {
 
   return (
     <div className="p-4 md:p-6">
-      <h1 className="text-xl font-semibold">Tax settings</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-xl font-semibold">Tax settings</h1>
+        <Link href="/settings/property" className="text-sm underline">
+          Property details →
+        </Link>
+      </div>
       <p className="mt-1 text-sm text-muted-foreground">
         This is an application-design illustration — validate against the
         GST rules applicable to your property and transaction date before
