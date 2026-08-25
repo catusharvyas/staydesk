@@ -3,18 +3,34 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "./nav-items";
+import { PropertyBrand } from "./property-brand";
 
 /**
  * Desktop/tablet nav — hidden below md, where BottomNav takes over.
  * ThemeToggle lives in AppHeader (not here) — one instance, visible at
  * every breakpoint, rather than duplicating it between the two nav shells.
+ * The brand slot follows the same rule: shown here on desktop, and in
+ * AppHeader on mobile, so exactly one is ever visible.
  */
-export function SideNav() {
+export function SideNav({
+  logoUrl,
+  propertyName,
+}: {
+  logoUrl: string | null;
+  propertyName: string;
+}) {
   const pathname = usePathname();
 
   return (
     <nav className="hidden md:flex w-56 shrink-0 flex-col gap-1 border-r p-4">
-      <div className="mb-4 px-2 text-lg font-semibold">Stay</div>
+      <div className="mb-4 px-2">
+        <PropertyBrand
+          logoUrl={logoUrl}
+          propertyName={propertyName}
+          logoClassName="h-9"
+          className="text-lg"
+        />
+      </div>
       {NAV_ITEMS.map((item) => {
         const active =
           pathname === item.href || pathname.startsWith(`${item.href}/`);
