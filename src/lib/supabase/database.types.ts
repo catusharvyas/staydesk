@@ -317,6 +317,7 @@ export type Database = {
           gstin: string | null
           id: string
           legal_name: string | null
+          logo_path: string | null
           name: string
           org_id: string
           pan: string | null
@@ -331,6 +332,7 @@ export type Database = {
           gstin?: string | null
           id?: string
           legal_name?: string | null
+          logo_path?: string | null
           name: string
           org_id: string
           pan?: string | null
@@ -345,6 +347,7 @@ export type Database = {
           gstin?: string | null
           id?: string
           legal_name?: string | null
+          logo_path?: string | null
           name?: string
           org_id?: string
           pan?: string | null

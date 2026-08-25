@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentProperty } from "@/lib/property";
 import { PropertySettingsForm } from "./property-settings-form";
+import { LogoForm } from "./logo-form";
 
 export default async function PropertySettingsPage() {
   const property = await getCurrentProperty();
@@ -37,6 +38,9 @@ export default async function PropertySettingsPage() {
         every tax invoice.
       </p>
       <div className="mt-4">
+        <LogoForm logoPath={property.logo_path} />
+      </div>
+      <div className="mt-6 border-t pt-6">
         <PropertySettingsForm property={property} />
       </div>
     </div>

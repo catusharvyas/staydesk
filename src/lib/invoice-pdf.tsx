@@ -8,7 +8,15 @@
 // Content/order mirrors the existing HTML invoice page
 // (bookings/[bookingId]/invoice/page.tsx) deliberately — this should read
 // as "the same invoice as a file", not a redesign.
-import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import {
+  Document,
+  Page,
+  Text,
+  View,
+  Image,
+  StyleSheet,
+  renderToBuffer,
+} from "@react-pdf/renderer";
 
 const styles = StyleSheet.create({
   page: { padding: 40, fontSize: 10, fontFamily: "Helvetica", color: "#111111" },
@@ -33,6 +41,12 @@ const styles = StyleSheet.create({
   totalsRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 2 },
   strong: { fontWeight: 700 },
   disclaimer: { marginTop: 24, fontSize: 8, color: "#999999" },
+  // Height only, so width scales with the logo's own aspect ratio, plus
+  // alignSelf so it sits flush with the text beneath it. Deliberately NOT
+  // `maxWidth` + `objectFit: "contain"` — that gives the element a fixed-width
+  // box and centres the image inside it, which rendered the logo visibly
+  // indented from the left margin.
+  logo: { height: 40, alignSelf: "flex-start", marginBottom: 8 },
 });
 
 function money(n: number) {
@@ -49,6 +63,14 @@ export type InvoicePdfProps = {
     pan: string | null;
     cin: string | null;
   };
+  /**
+   * Pre-fetched logo bytes, or null. Deliberately NOT a URL: giving
+   * <Image> a remote src makes react-pdf fetch it mid-render, so a slow or
+   * broken logo URL would delay or break the entire invoice PDF. The route
+   * handler fetches it up front and passes null on any failure, which
+   * degrades to a logo-less invoice instead of no invoice at all.
+   */
+  logo: { data: Buffer; format: "png" | "jpg" } | null;
   invoiceNumber: string;
   issuedAt: string;
   guest: { name: string; phone: string | null; email: string | null };
@@ -75,6 +97,10 @@ function InvoiceDocument(props: InvoicePdfProps) {
       <Page size="A4" style={styles.page}>
         <View style={styles.headerRow}>
           <View>
+            {/* jsx-a11y sees "Image" and assumes an <img>; this is
+                @react-pdf's PDF primitive, which has no alt concept. */}
+            {/* eslint-disable-next-line jsx-a11y/alt-text */}
+            {props.logo && <Image style={styles.logo} src={props.logo} />}
             {/* Mirrors the HTML invoice page's header exactly — legal entity
                 is the supplier of record, property name is the trading name. */}
             <Text style={styles.propertyName}>{property.legalName || property.name}</Text>

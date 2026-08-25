@@ -10,6 +10,30 @@ import { getCurrentProperty } from "@/lib/property";
 import { getInvoiceByBooking, getInvoiceDetails } from "@/lib/queries/invoices";
 import { renderInvoicePdf } from "@/lib/invoice-pdf";
 import { nightsBetween } from "@/lib/pricing";
+import { logoPublicUrl } from "@/lib/property-logo";
+
+/**
+ * Fetches the brand logo's bytes so react-pdf never has to fetch it itself
+ * mid-render. Any failure returns null — an invoice without a logo is a
+ * perfectly valid invoice, whereas a logo problem that throws would deny
+ * the guest their bill entirely.
+ */
+async function loadLogo(
+  logoPath: string | null
+): Promise<{ data: Buffer; format: "png" | "jpg" } | null> {
+  const url = logoPublicUrl(logoPath);
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const type = res.headers.get("content-type") ?? "";
+    const format = type.includes("png") ? "png" : type.includes("jpeg") ? "jpg" : null;
+    if (!format) return null;
+    return { data: Buffer.from(await res.arrayBuffer()), format };
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(
   _request: Request,
@@ -39,6 +63,8 @@ export async function GET(
     .reduce((sum, c) => sum + c.amount, 0);
   const roomCharge = invoice.taxable_value - taxableCharges;
 
+  const logo = await loadLogo(property.logo_path);
+
   const pdfBuffer = await renderInvoicePdf({
     property: {
       name: property.name,
@@ -48,6 +74,7 @@ export async function GET(
       pan: property.pan,
       cin: property.cin,
     },
+    logo,
     invoiceNumber: invoice.invoice_number,
     issuedAt: invoice.issued_at,
     guest: {

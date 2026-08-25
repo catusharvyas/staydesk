@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProperty } from "@/lib/property";
+import {
+  PROPERTY_LOGO_BUCKET,
+  LOGO_MAX_BYTES,
+  LOGO_MIME_TYPES,
+  extensionForMime,
+} from "@/lib/property-logo";
 
 export type PropertyActionState = { error: string | null; saved: boolean };
 
@@ -121,6 +127,100 @@ export async function updateProperty(
   revalidatePath("/settings/property");
   // Invoices render the property header (name/legal name/address/GSTIN),
   // so a change here has to invalidate them too.
+  revalidatePath("/bookings", "layout");
+  return { error: null, saved: true };
+}
+
+export type LogoActionState = { error: string | null; saved: boolean };
+
+/**
+ * Uploads a brand logo and points `properties.logo_path` at it.
+ *
+ * Each upload gets a UNIQUE filename (`logo-<timestamp>.<ext>`) rather than
+ * overwriting a fixed `logo.png`. The bucket is public and therefore
+ * CDN-cached, so reusing one path would leave the old image being served
+ * after a replacement — a new path sidesteps cache invalidation entirely.
+ * The previous object is deleted afterwards, best-effort: an orphaned file
+ * is harmless, but failing the user's action over one would not be.
+ */
+export async function uploadPropertyLogo(
+  _prevState: LogoActionState,
+  formData: FormData
+): Promise<LogoActionState> {
+  const property = await getCurrentProperty();
+  if (!property) return { error: "No property found.", saved: false };
+  if (property.role !== "owner" && property.role !== "admin") {
+    return { error: "Only owners and admins can change the logo.", saved: false };
+  }
+
+  const file = formData.get("logo");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "Choose an image to upload.", saved: false };
+  }
+  // Storage enforces both of these too (0010), but a raw storage rejection
+  // reads as an opaque error — these give the actual reason.
+  if (!(LOGO_MIME_TYPES as readonly string[]).includes(file.type)) {
+    return { error: "Logo must be a PNG or JPEG image.", saved: false };
+  }
+  if (file.size > LOGO_MAX_BYTES) {
+    return { error: "Logo must be 1 MB or smaller.", saved: false };
+  }
+  const ext = extensionForMime(file.type);
+  if (!ext) return { error: "Logo must be a PNG or JPEG image.", saved: false };
+
+  const supabase = await createClient();
+  const previousPath = property.logo_path;
+  // First path segment must be the property id — that's what the
+  // property_logos_write storage policy checks.
+  const newPath = `${property.id}/logo-${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(PROPERTY_LOGO_BUCKET)
+    .upload(newPath, file, { contentType: file.type, upsert: false });
+  if (uploadError) return { error: uploadError.message, saved: false };
+
+  const { error: updateError } = await supabase
+    .from("properties")
+    .update({ logo_path: newPath })
+    .eq("id", property.id);
+  if (updateError) {
+    // Don't leave an orphan behind if the row update is what failed.
+    await supabase.storage.from(PROPERTY_LOGO_BUCKET).remove([newPath]);
+    return { error: updateError.message, saved: false };
+  }
+
+  if (previousPath && previousPath !== newPath) {
+    await supabase.storage.from(PROPERTY_LOGO_BUCKET).remove([previousPath]);
+  }
+
+  revalidatePath("/settings/property");
+  revalidatePath("/bookings", "layout");
+  return { error: null, saved: true };
+}
+
+// Both parameters are required by useActionState's action signature even
+// though removal needs neither — there's nothing to read off the form.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function removePropertyLogo(_prevState: LogoActionState, _formData: FormData): Promise<LogoActionState> {
+  const property = await getCurrentProperty();
+  if (!property) return { error: "No property found.", saved: false };
+  if (property.role !== "owner" && property.role !== "admin") {
+    return { error: "Only owners and admins can change the logo.", saved: false };
+  }
+  if (!property.logo_path) return { error: null, saved: true };
+
+  const supabase = await createClient();
+  // Clear the reference first: a dangling logo_path would render a broken
+  // image, whereas a leftover object nothing points at is invisible.
+  const { error } = await supabase
+    .from("properties")
+    .update({ logo_path: null })
+    .eq("id", property.id);
+  if (error) return { error: error.message, saved: false };
+
+  await supabase.storage.from(PROPERTY_LOGO_BUCKET).remove([property.logo_path]);
+
+  revalidatePath("/settings/property");
   revalidatePath("/bookings", "layout");
   return { error: null, saved: true };
 }

@@ -9,6 +9,7 @@ import { getCurrentProperty } from "@/lib/property";
 import { getInvoiceByBooking, getInvoiceDetails } from "@/lib/queries/invoices";
 import { getTaxSettings } from "@/lib/queries/pricing";
 import { calculateBookingPricing, nightsBetween } from "@/lib/pricing";
+import { logoPublicUrl } from "@/lib/property-logo";
 import { GenerateInvoiceButton, PrintButton } from "./invoice-controls";
 
 export default async function InvoicePage({
@@ -23,6 +24,7 @@ export default async function InvoicePage({
   if (!booking) notFound();
 
   const invoice = await getInvoiceByBooking(property.id, bookingId);
+  const logoUrl = logoPublicUrl(property.logo_path);
 
   const paidTotal = booking.payments.reduce((sum, p) => sum + p.amount, 0);
 
@@ -88,6 +90,14 @@ export default async function InvoicePage({
       <div className="rounded-lg border p-6 print:border-none">
         <div className="flex items-start justify-between">
           <div>
+            {logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={logoUrl}
+                alt=""
+                className="mb-2 h-12 w-auto max-w-[200px] object-contain"
+              />
+            )}
             {/* The legal entity is the supplier of record on a tax invoice;
                 the property name is the trading name guests recognise. Show
                 both when they differ, and fall back to the property name
