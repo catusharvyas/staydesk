@@ -72,11 +72,20 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.546 0.245 262.881);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Occupancy density ramp (dashboard month calendar) — the same five
+     lightness steps shadcn originally scaffolded here (grayscale, unused
+     until now), given a teal hue. Fixed and independent of --primary: see
+     src/lib/occupancy-buckets.ts for why data colour must not move with
+     the brand theme, and why teal specifically (distinct from the room
+     board's green/blue/amber/red and every accent preset's 235–355° hue
+     range). Same values in light and dark mode, same as the original
+     scaffold — these are small chip backgrounds with their own text
+     colour, not full-page surfaces, so they don't need a dark variant. */
+  --chart-1: oklch(0.87 0.05 195);
+  --chart-2: oklch(0.556 0.09 195);
+  --chart-3: oklch(0.439 0.1 195);
+  --chart-4: oklch(0.371 0.11 195);
+  --chart-5: oklch(0.269 0.12 195);
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -110,11 +119,11 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.623 0.214 259.815);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --chart-1: oklch(0.87 0.05 195);
+  --chart-2: oklch(0.556 0.09 195);
+  --chart-3: oklch(0.439 0.1 195);
+  --chart-4: oklch(0.371 0.11 195);
+  --chart-5: oklch(0.269 0.12 195);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
