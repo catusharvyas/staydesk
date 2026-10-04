@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Plus } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { PropertyBrand } from "./property-brand";
@@ -19,7 +20,7 @@ export function AppHeader({
   propertyName: string;
 }) {
   return (
-    <header className="flex items-center border-b px-4 py-2">
+    <header className="sticky top-0 z-40 flex items-center border-b bg-background/80 px-4 py-2.5 backdrop-blur-md md:px-6">
       <PropertyBrand
         logoUrl={logoUrl}
         propertyName={propertyName}
@@ -27,8 +28,8 @@ export function AppHeader({
         logoClassName="h-7"
       />
       <div className="ml-auto flex items-center gap-2">
-        <Link href="/bookings/new" className={buttonVariants({ size: "sm" })}>
-          + Booking
+        <Link href="/bookings/new" className={buttonVariants({ size: "default" })}>
+          <Plus /> New booking
         </Link>
         <ThemeToggle />
       </div>

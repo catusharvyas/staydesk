@@ -5,6 +5,8 @@
 import { redirect } from "next/navigation";
 import { getCurrentProperty } from "@/lib/property";
 import { listRoomsWithType, listRoomTypes } from "@/lib/queries/rooms";
+import { PageHeader } from "@/components/page/page-header";
+import { Surface } from "@/components/page/surface";
 import { AddRoomForm, AddRoomTypeForm } from "./room-forms";
 import { RoomBoard } from "./room-board";
 
@@ -21,19 +23,19 @@ export default async function RoomsPage() {
   const roomTypeNames = Object.fromEntries(roomTypes.map((rt) => [rt.id, rt.name]));
 
   return (
-    <div className="p-4 md:p-6">
-      <h1 className="text-xl font-semibold">Rooms</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Tap a room to view guest, stay, charges and payments.
-      </p>
+    <div className="p-4 md:p-8">
+      <PageHeader
+        title="Rooms"
+        description="Tap a room to view guest, stay, charges and payments."
+      />
 
       {canManage && (
-        <div className="mt-4 flex flex-col gap-3 rounded-lg border p-3">
+        <Surface className="mt-5 flex flex-col gap-3 p-4">
           <AddRoomTypeForm />
           {roomTypes.length > 0 && (
             <AddRoomForm roomTypes={roomTypes.map((rt) => ({ id: rt.id, name: rt.name }))} />
           )}
-        </div>
+        </Surface>
       )}
 
       <RoomBoard

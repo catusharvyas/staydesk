@@ -3,18 +3,41 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { BedDouble } from "lucide-react";
+import { EmptyState } from "@/components/page/surface";
 import { ReleaseRoomButton } from "./release-button";
 import type { listRoomsWithType } from "@/lib/queries/rooms";
 import type { Tables } from "@/lib/supabase/database.types";
 
 type Room = Awaited<ReturnType<typeof listRoomsWithType>>[number];
 
-const STATUS_STYLES: Record<string, string> = {
-  available: "text-green-600 dark:text-green-400",
-  occupied: "text-blue-600 dark:text-blue-400",
-  reserved: "text-amber-600 dark:text-amber-400",
-  cleaning: "text-muted-foreground",
-  maintenance: "text-red-600 dark:text-red-400",
+// Semantic status colours — deliberately separate from the brand accent.
+const STATUS_STYLES: Record<string, { dot: string; chip: string; edge: string }> = {
+  available: {
+    dot: "bg-green-500",
+    chip: "bg-green-500/12 text-green-700 dark:text-green-400",
+    edge: "border-l-green-500",
+  },
+  occupied: {
+    dot: "bg-blue-500",
+    chip: "bg-blue-500/12 text-blue-700 dark:text-blue-400",
+    edge: "border-l-blue-500",
+  },
+  reserved: {
+    dot: "bg-amber-500",
+    chip: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+    edge: "border-l-amber-500",
+  },
+  cleaning: {
+    dot: "bg-slate-400",
+    chip: "bg-slate-500/12 text-slate-600 dark:text-slate-400",
+    edge: "border-l-slate-400",
+  },
+  maintenance: {
+    dot: "bg-red-500",
+    chip: "bg-red-500/12 text-red-700 dark:text-red-400",
+    edge: "border-l-red-500",
+  },
 };
 
 /**
@@ -90,26 +113,40 @@ export function RoomBoard({
 
   if (rooms.length === 0) {
     return (
-      <div className="mt-4 rounded-lg border p-4 text-sm text-muted-foreground">
-        {hasRoomTypes ? "No rooms yet — add one above." : "Add a room type above to get started."}
-      </div>
+      <EmptyState
+        className="mt-5"
+        icon={BedDouble}
+        title={hasRoomTypes ? "No rooms yet" : "Start with a room type"}
+        hint={hasRoomTypes ? "Add your first room above." : "Add a room type above, then add rooms to it."}
+      />
     );
   }
 
   return (
-    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-      {rooms.map((room) => (
-        <div key={room.id} className="rounded-lg border p-3">
-          <Link href={`/rooms/${room.id}`} className="block hover:opacity-80">
-            <div className="text-sm font-semibold">{room.number}</div>
-            <div className={`text-xs font-medium uppercase ${STATUS_STYLES[room.status]}`}>
-              {room.status}
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">{room.room_types?.name}</div>
-          </Link>
-          {room.status === "cleaning" && <ReleaseRoomButton roomId={room.id} />}
-        </div>
-      ))}
+    <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+      {rooms.map((room) => {
+        const st = STATUS_STYLES[room.status] ?? STATUS_STYLES.cleaning;
+        return (
+          <div
+            key={room.id}
+            className={`rounded-xl border-l-4 bg-card p-3.5 shadow-sm ring-1 ring-foreground/8 transition-shadow hover:shadow-md ${st.edge}`}
+          >
+            <Link href={`/rooms/${room.id}`} className="block">
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-xl font-semibold leading-none tracking-tight">{room.number}</div>
+                <span className={`size-2.5 rounded-full ${st.dot}`} aria-hidden />
+              </div>
+              <div className="mt-2 truncate text-xs text-muted-foreground">{room.room_types?.name}</div>
+              <span
+                className={`mt-2 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${st.chip}`}
+              >
+                {room.status}
+              </span>
+            </Link>
+            {room.status === "cleaning" && <ReleaseRoomButton roomId={room.id} />}
+          </div>
+        );
+      })}
     </div>
   );
 }

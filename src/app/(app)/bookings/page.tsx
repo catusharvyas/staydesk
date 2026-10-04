@@ -2,6 +2,10 @@
 // See PROJECT.md §1 and §4 (build phase 3).
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ArrowRight, CalendarCheck, FileText, Plus } from "lucide-react";
+import { PageHeader } from "@/components/page/page-header";
+import { EmptyState, SurfaceList } from "@/components/page/surface";
+import { buttonVariants } from "@/components/ui/button";
 import { getCurrentProperty } from "@/lib/property";
 import { listBookings, listAvailableRooms, listGuests } from "@/lib/queries/bookings";
 import { BookingRowActions } from "./booking-actions-inline";
@@ -11,6 +15,13 @@ const STATUS_LABEL: Record<string, string> = {
   checked_in: "Checked in",
   checked_out: "Checked out",
   cancelled: "Cancelled",
+};
+
+const STATUS_CHIP: Record<string, string> = {
+  reserved: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  checked_in: "bg-blue-500/12 text-blue-700 dark:text-blue-400",
+  checked_out: "bg-green-500/12 text-green-700 dark:text-green-400",
+  cancelled: "bg-slate-500/12 text-slate-600 dark:text-slate-400",
 };
 
 export default async function BookingsPage() {
@@ -40,37 +51,52 @@ export default async function BookingsPage() {
   );
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Bookings</h1>
-        <Link
-          href="/bookings/new"
-          className="rounded-md bg-foreground px-3 py-1.5 text-sm text-background"
-        >
-          + New booking
-        </Link>
-      </div>
+    <div className="p-4 md:p-8">
+      <PageHeader
+        title="Bookings"
+        action={
+          <Link href="/bookings/new" className={buttonVariants()}>
+            <Plus /> New booking
+          </Link>
+        }
+      />
 
       {bookings.length === 0 ? (
-        <div className="mt-4 rounded-lg border p-4 text-sm text-muted-foreground">
-          No bookings yet.
-        </div>
+        <EmptyState
+          className="mt-5"
+          icon={CalendarCheck}
+          title="No bookings yet"
+          hint="Create a booking to reserve a room for a guest."
+        />
       ) : (
-        <ul className="mt-4 divide-y rounded-lg border">
+        <SurfaceList className="mt-5">
           {bookings.map((b) => (
-            <li key={b.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
-              <div>
-                <div className="font-medium">
-                  {b.rooms?.number} — {b.guests?.name}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {b.check_in_planned} → {b.check_out_planned} · {STATUS_LABEL[b.status]}
+            <li key={b.id} className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-semibold text-primary">
+                  {b.rooms?.number}
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate font-medium">{b.guests?.name}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_CHIP[b.status] ?? ""}`}
+                    >
+                      {STATUS_LABEL[b.status]}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    {b.check_in_planned} <ArrowRight className="size-3" /> {b.check_out_planned}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 {b.status === "checked_out" && (
-                  <Link href={`/bookings/${b.id}/invoice`} className="text-xs underline">
-                    Invoice
+                  <Link
+                    href={`/bookings/${b.id}/invoice`}
+                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                  >
+                    <FileText /> Invoice
                   </Link>
                 )}
                 <BookingRowActions
@@ -84,7 +110,7 @@ export default async function BookingsPage() {
               </div>
             </li>
           ))}
-        </ul>
+        </SurfaceList>
       )}
     </div>
   );

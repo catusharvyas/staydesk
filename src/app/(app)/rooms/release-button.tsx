@@ -10,14 +10,14 @@ export function ReleaseRoomButton({ roomId }: { roomId: string }) {
   const [state, formAction, pending] = useActionState(releaseRoom, INITIAL_STATE);
 
   return (
-    <form action={formAction} className="mt-1">
+    <form action={formAction} className="mt-3">
       <input type="hidden" name="roomId" value={roomId} />
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded border px-2 py-1 text-xs hover:bg-muted"
+        className="w-full cursor-pointer rounded-lg bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
       >
-        {pending ? "…" : "Release"}
+        {pending ? "…" : "Mark clean"}
       </button>
       {state.error && <p className="mt-1 text-[10px] text-destructive">{state.error}</p>}
     </form>

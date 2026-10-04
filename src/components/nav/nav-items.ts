@@ -1,6 +1,16 @@
+import {
+  BedDouble,
+  CalendarCheck,
+  LayoutDashboard,
+  Users,
+  BarChart3,
+  type LucideIcon,
+} from "lucide-react";
+
 export type NavItem = {
   href: string;
   label: string;
+  icon: LucideIcon;
 };
 
 // Mirrors the mobile bottom-nav from PROJECT.md §1/§3: Home, Rooms, Bookings, Guests, More.
@@ -8,9 +18,9 @@ export type NavItem = {
 // (top-right, reachable from every page) once this slot pointed at the
 // list instead — see PROJECT.md's nav changelog entry for why.
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Home" },
-  { href: "/rooms", label: "Rooms" },
-  { href: "/bookings", label: "Bookings" },
-  { href: "/guests", label: "Guests" },
-  { href: "/reports", label: "More" },
+  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
+  { href: "/rooms", label: "Rooms", icon: BedDouble },
+  { href: "/bookings", label: "Bookings", icon: CalendarCheck },
+  { href: "/guests", label: "Guests", icon: Users },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
 ];

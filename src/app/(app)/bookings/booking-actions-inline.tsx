@@ -80,5 +80,5 @@ export function BookingRowActions({
   if (status === "checked_in") {
     return <ActionForm action={checkOutBooking} bookingId={bookingId} label="Check out" />;
   }
-  return <span className="text-xs text-muted-foreground capitalize">{status.replace("_", " ")}</span>;
+  return null;
 }

@@ -31,7 +31,7 @@ export default async function AppLayout({
       <SideNav logoUrl={logoUrl} propertyName={property.name} />
       <div className="flex flex-1 flex-col overflow-x-hidden">
         <AppHeader logoUrl={logoUrl} propertyName={property.name} />
-        <main className="flex-1 pb-16 md:pb-0">{children}</main>
+        <main className="mx-auto w-full max-w-6xl flex-1 pb-20 md:pb-8">{children}</main>
       </div>
       <BottomNav />
     </div>

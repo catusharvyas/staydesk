@@ -24,7 +24,14 @@ export function PropertyBrand({
   // ("text-lg" from SideNav), and two competing Tailwind size classes in one
   // string resolve by stylesheet order, not by which was passed last.
   if (!logoUrl) {
-    return <span className={cn("text-base font-semibold", className)}>Stay</span>;
+    return (
+      <span className={cn("flex items-center gap-2 text-base font-semibold tracking-tight", className)}>
+        <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
+          S
+        </span>
+        Stay
+      </span>
+    );
   }
 
   return (

@@ -1,6 +1,9 @@
 // Guest contact details and stay history. See PROJECT.md §1 (build phase 4).
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ChevronRight, Search, Users } from "lucide-react";
+import { PageHeader } from "@/components/page/page-header";
+import { EmptyState, SurfaceList } from "@/components/page/surface";
 import { getCurrentProperty } from "@/lib/property";
 import { listGuestsWithSearch } from "@/lib/queries/guests";
 import { AddGuestForm } from "./guest-forms";
@@ -17,40 +20,47 @@ export default async function GuestsPage({
   const guests = await listGuestsWithSearch(property.id, q);
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Guests</h1>
-        <AddGuestForm />
-      </div>
+    <div className="p-4 md:p-8">
+      <PageHeader title="Guests" action={<AddGuestForm />} />
 
-      <form method="get" className="mt-4 max-w-sm">
+      <form method="get" className="relative mt-5 max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
           type="search"
           name="q"
           defaultValue={q}
           placeholder="Search by name or phone"
-          className="h-9 w-full rounded-md border px-3 text-sm"
+          className="h-10 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       </form>
 
       {guests.length === 0 ? (
-        <div className="mt-4 rounded-lg border p-4 text-sm text-muted-foreground">
-          {q ? `No guests match "${q}".` : "No guests yet."}
-        </div>
+        <EmptyState
+          className="mt-5"
+          icon={Users}
+          title={q ? `No guests match "${q}"` : "No guests yet"}
+          hint={q ? "Try a different name or phone number." : "Add a guest to get started."}
+        />
       ) : (
-        <ul className="mt-4 divide-y rounded-lg border">
+        <SurfaceList className="mt-5">
           {guests.map((g) => (
             <li key={g.id}>
               <Link
                 href={`/guests/${g.id}`}
-                className="flex items-center justify-between p-3 text-sm hover:bg-muted"
+                className="flex items-center gap-3 p-3.5 text-sm transition-colors hover:bg-muted/60"
               >
-                <span className="font-medium">{g.name}</span>
-                <span className="text-muted-foreground">{g.phone}</span>
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold uppercase text-primary">
+                  {g.name.trim().charAt(0)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{g.name}</span>
+                  <span className="block text-xs text-muted-foreground">{g.phone}</span>
+                </span>
+                <ChevronRight className="size-4 text-muted-foreground" />
               </Link>
             </li>
           ))}
-        </ul>
+        </SurfaceList>
       )}
     </div>
   );
