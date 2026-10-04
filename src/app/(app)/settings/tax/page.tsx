@@ -3,6 +3,10 @@
 // enforced by tax_settings_write RLS.
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { Building2 } from "lucide-react";
+import { BackLink, PageHeader } from "@/components/page/page-header";
+import { Surface } from "@/components/page/surface";
+import { buttonVariants } from "@/components/ui/button";
 import { getCurrentProperty } from "@/lib/property";
 import { getTaxSettings } from "@/lib/queries/pricing";
 import { TaxSettingsForm } from "./tax-settings-form";
@@ -13,11 +17,12 @@ export default async function TaxSettingsPage() {
 
   if (property.role !== "owner" && property.role !== "admin") {
     return (
-      <div className="p-4 md:p-6">
-        <h1 className="text-xl font-semibold">Tax settings</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Only owners and admins can view tax settings.
-        </p>
+      <div className="p-4 md:p-8">
+        <BackLink href="/reports">Reports</BackLink>
+        <PageHeader
+          title="Tax settings"
+          description="Only owners and admins can view tax settings."
+        />
       </div>
     );
   }
@@ -25,31 +30,31 @@ export default async function TaxSettingsPage() {
   const settings = await getTaxSettings(property.id);
   if (!settings) {
     return (
-      <div className="p-4 md:p-6">
-        <h1 className="text-xl font-semibold">Tax settings</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          No tax settings found for this property.
-        </p>
+      <div className="p-4 md:p-8">
+        <BackLink href="/reports">Reports</BackLink>
+        <PageHeader
+          title="Tax settings"
+          description="No tax settings found for this property."
+        />
       </div>
     );
   }
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Tax settings</h1>
-        <Link href="/settings/property" className="text-sm underline">
-          Property details →
-        </Link>
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        This is an application-design illustration — validate against the
-        GST rules applicable to your property and transaction date before
-        relying on it in production.
-      </p>
-      <div className="mt-4">
+    <div className="p-4 md:p-8">
+      <BackLink href="/reports">Reports</BackLink>
+      <PageHeader
+        title="Tax settings"
+        description="This is an application-design illustration — validate against the GST rules applicable to your property and transaction date before relying on it in production."
+        action={
+          <Link href="/settings/property" className={buttonVariants({ variant: "outline" })}>
+            <Building2 /> Property details
+          </Link>
+        }
+      />
+      <Surface className="mt-5 max-w-2xl p-5">
         <TaxSettingsForm settings={settings} />
-      </div>
+      </Surface>
     </div>
   );
 }

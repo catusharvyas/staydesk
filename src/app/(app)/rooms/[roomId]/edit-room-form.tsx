@@ -47,7 +47,7 @@ export function EditRoomForm({
     <form
       key={`${room.number}-${room.floor}-${room.room_type_id}`}
       action={formAction}
-      className="flex flex-wrap items-end gap-2 rounded-lg border p-3"
+      className="flex flex-wrap items-end gap-2 rounded-xl bg-muted/60 p-3.5"
     >
       <input type="hidden" name="roomId" value={room.id} />
       <div className="flex flex-col gap-1">

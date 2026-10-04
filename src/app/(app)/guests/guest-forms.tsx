@@ -110,7 +110,7 @@ export function AddGuestForm() {
   }
 
   return (
-    <form action={formAction} className="grid max-w-lg grid-cols-2 gap-3 rounded-lg border p-4">
+    <form action={formAction} className="grid max-w-lg grid-cols-2 gap-3 rounded-xl bg-card p-5 shadow-sm ring-1 ring-foreground/8">
       <div className="col-span-2 flex flex-col gap-1.5">
         <Label htmlFor="g-name">Name</Label>
         <Input id="g-name" name="name" required />

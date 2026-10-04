@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -46,5 +48,24 @@ export function SectionTitle({
     >
       {children}
     </h2>
+  );
+}
+
+/** "← Rooms"-style link back to a parent list, shown above detail pages. */
+export function BackLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className="-ml-1 mb-3 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ChevronLeft className="size-4" />
+      {children}
+    </Link>
   );
 }

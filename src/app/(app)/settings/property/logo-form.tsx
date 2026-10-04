@@ -57,7 +57,7 @@ export function LogoForm({ logoPath }: { logoPath: string | null }) {
         <img
           src={shown}
           alt="Property logo"
-          className="h-16 w-auto max-w-[220px] rounded border bg-white object-contain p-2"
+          className="h-16 w-auto max-w-[220px] rounded-lg border bg-white object-contain p-2"
         />
       ) : (
         <p className="text-sm text-muted-foreground">No logo uploaded yet.</p>

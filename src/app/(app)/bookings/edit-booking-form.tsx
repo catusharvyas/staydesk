@@ -57,7 +57,7 @@ export function EditBookingForm({
   return (
     <form
       action={formAction}
-      className="flex w-full flex-wrap items-end gap-2 rounded-lg border p-3"
+      className="flex w-full flex-wrap items-end gap-2 rounded-xl bg-muted/60 p-3.5"
     >
       <input type="hidden" name="bookingId" value={bookingId} />
       <div className="flex flex-col gap-1">

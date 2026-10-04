@@ -109,7 +109,7 @@ export function RecordPaymentForm({ bookingId }: { bookingId: string }) {
   }
 
   return (
-    <form action={formAction} className="flex flex-wrap items-end gap-2 rounded-md border p-3">
+    <form action={formAction} className="flex flex-wrap items-end gap-2 rounded-xl bg-muted/60 p-3.5">
       <input type="hidden" name="bookingId" value={bookingId} />
       <div className="flex flex-col gap-1">
         <Label htmlFor="paymentAmount" className="text-xs">Amount (₹)</Label>

@@ -3,8 +3,10 @@
 // (PROJECT.md §6). Reuses src/lib/pricing.ts for any live (pre-generation)
 // preview; a generated invoice's stored totals are the frozen source of
 // truth from that point on, same as real invoicing.
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { Download } from "lucide-react";
+import { BackLink } from "@/components/page/page-header";
+import { buttonVariants } from "@/components/ui/button";
 import { getCurrentProperty } from "@/lib/property";
 import { getInvoiceByBooking, getInvoiceDetails } from "@/lib/queries/invoices";
 import { getTaxSettings } from "@/lib/queries/pricing";
@@ -69,25 +71,23 @@ export default async function InvoicePage({
   const balance = breakdown ? Math.max(0, breakdown.grandTotal - paidTotal) : 0;
 
   return (
-    <div className="mx-auto max-w-2xl p-4 md:p-6 print:p-0">
+    <div className="mx-auto max-w-2xl p-4 md:p-8 print:p-0">
       <div className="mb-4 flex items-center justify-between print:hidden">
-        <Link href="/bookings" className="text-sm text-muted-foreground hover:underline">
-          ← Bookings
-        </Link>
+        <BackLink href="/bookings">Bookings</BackLink>
         <div className="flex gap-2">
           {invoice && (
             <a
               href={`/bookings/${bookingId}/invoice/pdf`}
-              className="inline-flex h-8 items-center rounded-lg border px-2.5 text-sm hover:bg-muted"
+              className={buttonVariants({ variant: "outline" })}
             >
-              Download PDF
+              <Download /> PDF
             </a>
           )}
           <PrintButton />
         </div>
       </div>
 
-      <div className="rounded-lg border p-6 print:border-none">
+      <div className="rounded-2xl bg-card p-6 shadow-sm ring-1 ring-foreground/8 md:p-8 print:rounded-none print:p-0 print:shadow-none print:ring-0">
         <div className="flex items-start justify-between">
           <div>
             {logoUrl && (
@@ -102,7 +102,7 @@ export default async function InvoicePage({
                 the property name is the trading name guests recognise. Show
                 both when they differ, and fall back to the property name
                 alone when no legal entity has been set. */}
-            <h1 className="text-lg font-semibold">{property.legal_name || property.name}</h1>
+            <h1 className="text-lg font-semibold tracking-tight">{property.legal_name || property.name}</h1>
             {property.legal_name && property.legal_name !== property.name && (
               <p className="text-sm text-muted-foreground">{property.name}</p>
             )}
@@ -114,7 +114,7 @@ export default async function InvoicePage({
             {property.cin && <p className="text-sm text-muted-foreground">CIN: {property.cin}</p>}
           </div>
           <div className="text-right">
-            <p className="font-medium">Tax Invoice</p>
+            <p className="text-lg font-semibold tracking-tight text-primary">Tax Invoice</p>
             {invoice ? (
               <>
                 <p className="text-sm text-muted-foreground">{invoice.invoice_number}</p>
@@ -128,7 +128,7 @@ export default async function InvoicePage({
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-4 text-sm">
+        <div className="mt-6 grid grid-cols-2 gap-4 rounded-xl bg-muted/60 p-4 text-sm print:bg-transparent print:p-0">
           <div>
             <p className="text-xs font-medium text-muted-foreground">Billed to</p>
             <p>{booking.guests?.name}</p>
@@ -150,33 +150,33 @@ export default async function InvoicePage({
           <>
             <table className="mt-6 w-full text-sm">
               <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="py-1 font-normal">Description</th>
-                  <th className="py-1 text-right font-normal">Amount</th>
+                <tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground">
+                  <th className="py-2 font-medium">Description</th>
+                  <th className="py-2 text-right font-medium">Amount</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td className="py-1">
+                  <td className="py-1.5">
                     Room charge ({nightsBetween(booking.check_in_planned, booking.check_out_planned)} nights)
                   </td>
-                  <td className="py-1 text-right">
+                  <td className="py-1.5 text-right tabular-nums">
                     ₹{(breakdown.taxableValue - sumTaxable(booking.booking_charges)).toFixed(2)}
                   </td>
                 </tr>
                 {booking.booking_charges.map((c) => (
                   <tr key={c.id}>
-                    <td className="py-1">
+                    <td className="py-1.5">
                       {c.description}
                       {!c.taxable && " (non-taxable)"}
                     </td>
-                    <td className="py-1 text-right">₹{c.amount.toFixed(2)}</td>
+                    <td className="py-1.5 text-right tabular-nums">₹{c.amount.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            <dl className="mt-4 flex flex-col gap-1 border-t pt-3 text-sm">
+            <dl className="mt-4 flex flex-col gap-2 border-t pt-4 text-sm">
               <Row label="Taxable value" value={breakdown.taxableValue} />
               {breakdown.cgst > 0 && <Row label="CGST" value={breakdown.cgst} />}
               {breakdown.sgst > 0 && <Row label="SGST" value={breakdown.sgst} />}
@@ -230,7 +230,7 @@ function sumTaxable(charges: { amount: number; taxable: boolean }[]) {
 function Row({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
   const sign = value < 0 ? "-" : "";
   return (
-    <div className={`flex justify-between ${strong ? "font-medium" : "text-muted-foreground"}`}>
+    <div className={`flex justify-between ${strong ? "text-base font-semibold" : "text-muted-foreground"}`}>
       <dt>{label}</dt>
       <dd>{sign}₹{Math.abs(value).toFixed(2)}</dd>
     </div>

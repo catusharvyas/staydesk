@@ -12,7 +12,7 @@ export function OnboardingForm() {
   const [state, formAction, pending] = useActionState(createProperty, INITIAL_STATE);
 
   return (
-    <form action={formAction} className="mt-6 flex flex-col gap-4">
+    <form action={formAction} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="orgName">Organization name</Label>
         <Input id="orgName" name="orgName" required placeholder="e.g. Sharma Hospitality" />
@@ -30,9 +30,11 @@ export function OnboardingForm() {
         <Input id="gstin" name="gstin" placeholder="Add later in Settings if not registered yet" />
       </div>
 
-      {state.error && <p className="text-sm text-destructive">{state.error}</p>}
+      {state.error && (
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+      )}
 
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" size="lg" disabled={pending}>
         {pending ? "Creating…" : "Create property"}
       </Button>
     </form>

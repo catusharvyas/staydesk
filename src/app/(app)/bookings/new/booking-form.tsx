@@ -37,7 +37,7 @@ export function BookingForm({
   const roomItems = Object.fromEntries(rooms.map((r) => [r.id, `${r.number} · ${r.typeName}`]));
 
   return (
-    <form action={formAction} className="flex max-w-sm flex-col gap-4">
+    <form action={formAction} className="flex flex-col gap-4">
       <input type="hidden" name="checkInPlanned" value={checkIn} />
       <input type="hidden" name="checkOutPlanned" value={checkOut} />
 
@@ -64,7 +64,7 @@ export function BookingForm({
       </div>
 
       {guestId === NEW_GUEST && (
-        <div className="flex flex-col gap-3 rounded-md border p-3">
+        <div className="flex flex-col gap-3 rounded-xl bg-muted/60 p-3.5">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="guestName">Name</Label>
             <Input id="guestName" name="guestName" required />
@@ -94,7 +94,7 @@ export function BookingForm({
 
       {state.error && <p className="text-sm text-destructive">{state.error}</p>}
 
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" size="lg" disabled={pending}>
         {pending ? "Creating…" : "Create booking"}
       </Button>
     </form>

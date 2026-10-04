@@ -3,6 +3,9 @@
 // Next.js 16: `params` is a Promise and must be awaited (async Request APIs).
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { BackLink, PageHeader, SectionTitle } from "@/components/page/page-header";
+import { Surface } from "@/components/page/surface";
+import { buttonVariants } from "@/components/ui/button";
 import { getCurrentProperty } from "@/lib/property";
 import { getRoomWithType, listRoomTypes } from "@/lib/queries/rooms";
 import { getActiveBookingForRoom } from "@/lib/queries/bookings";
@@ -55,23 +58,22 @@ export default async function RoomDetailPage({
   const balance = pricing ? Math.max(0, pricing.grandTotal - paidTotal) : 0;
 
   return (
-    <div className="p-4 md:p-6">
-      <Link
-        href="/rooms"
-        className="text-sm text-muted-foreground hover:underline"
-      >
-        ← Rooms
-      </Link>
+    <div className="p-4 md:p-8">
+      <BackLink href="/rooms">Rooms</BackLink>
 
-      <h1 className="mt-2 text-xl font-semibold">Room {room.number}</h1>
-      <p className="mt-1 text-sm uppercase text-muted-foreground">
-        {room.status} · {room.room_types?.name}
-        {room.room_types?.base_rate != null &&
-          ` · ₹${room.room_types.base_rate}/night`}
-      </p>
+      <PageHeader
+        title={`Room ${room.number}`}
+        description={
+          <>
+            <span className="font-medium capitalize text-foreground">{room.status}</span>
+            {` · ${room.room_types?.name ?? ""}`}
+            {room.room_types?.base_rate != null && ` · ₹${room.room_types.base_rate}/night`}
+          </>
+        }
+      />
 
       {canManage && (
-        <div className="mt-3">
+        <div className="mt-4">
           <EditRoomForm
             room={{ id: room.id, number: room.number, floor: room.floor, room_type_id: room.room_type_id }}
             roomTypes={roomTypes.map((rt) => ({ id: rt.id, name: rt.name }))}
@@ -80,13 +82,14 @@ export default async function RoomDetailPage({
       )}
 
       {booking ? (
-        <div className="mt-4 flex flex-col gap-4">
-          <div className="rounded-lg border p-4">
-            <div className="font-medium">{booking.guests?.name}</div>
+        <div className="mt-5 flex flex-col gap-4">
+          <Surface className="p-5">
+            <SectionTitle>Current stay</SectionTitle>
+            <div className="mt-3 text-lg font-semibold">{booking.guests?.name}</div>
             {booking.guests?.phone && (
               <div className="text-sm text-muted-foreground">{booking.guests.phone}</div>
             )}
-            <div className="mt-2 text-sm">
+            <div className="mt-1 text-sm">
               {booking.status === "checked_in" ? "Checked in" : "Reserved"}:{" "}
               {booking.check_in_planned} → {booking.check_out_planned}
             </div>
@@ -101,11 +104,11 @@ export default async function RoomDetailPage({
                 </>
               )}
             </div>
-          </div>
+          </Surface>
 
           {pricing && (
-            <div className="rounded-lg border p-4">
-              <h2 className="text-sm font-medium text-muted-foreground">Pricing</h2>
+            <Surface className="p-5">
+              <SectionTitle>Pricing</SectionTitle>
 
               <div className="mt-3">
                 <RateDiscountForm
@@ -115,7 +118,7 @@ export default async function RoomDetailPage({
                 />
               </div>
 
-              <dl className="mt-4 flex flex-col gap-1 text-sm">
+              <dl className="mt-5 flex flex-col gap-2 text-sm">
                 <Row label="Room charge" value={pricing.roomCharge} />
                 {charges.map((c) => (
                   <Row
@@ -145,8 +148,8 @@ export default async function RoomDetailPage({
 
               {payments.length > 0 && (
                 <div className="mt-4">
-                  <h3 className="text-xs font-medium text-muted-foreground">Payments</h3>
-                  <ul className="mt-1 flex flex-col gap-1 text-sm">
+                  <SectionTitle>Payments</SectionTitle>
+                  <ul className="mt-2 flex flex-col gap-1.5 text-sm">
                     {payments.map((p) => (
                       <li key={p.id}>
                         ₹{p.amount} · {p.mode.replace("_", " ")}
@@ -156,17 +159,16 @@ export default async function RoomDetailPage({
                   </ul>
                 </div>
               )}
-            </div>
+            </Surface>
           )}
         </div>
       ) : (
-        <p className="mt-4 text-sm text-muted-foreground">
-          No active stay for this room.{" "}
-          <Link href="/bookings/new" className="underline">
+        <Surface className="mt-5 flex flex-col items-start gap-3 p-5">
+          <p className="text-sm text-muted-foreground">No active stay for this room.</p>
+          <Link href="/bookings/new" className={buttonVariants()}>
             Create a booking
           </Link>
-          .
-        </p>
+        </Surface>
       )}
     </div>
   );
@@ -175,7 +177,7 @@ export default async function RoomDetailPage({
 function Row({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
   const sign = value < 0 ? "-" : "";
   return (
-    <div className={`flex justify-between ${strong ? "font-medium" : "text-muted-foreground"}`}>
+    <div className={`flex justify-between ${strong ? "border-t pt-2 font-semibold" : "text-muted-foreground"}`}>
       <dt>{label}</dt>
       <dd>{sign}₹{Math.abs(value).toFixed(2)}</dd>
     </div>

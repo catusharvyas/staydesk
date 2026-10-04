@@ -13,7 +13,7 @@ const INITIAL_STATE: PropertyActionState = { error: null, saved: false };
 // multi-line address field matches every other field on the page. Promote
 // to a shared component if a second textarea ever shows up.
 const TEXTAREA_CLASS =
-  "w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30";
+  "w-full min-w-0 rounded-lg border border-input bg-card px-3 py-1.5 text-base shadow-xs transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30";
 
 export function PropertySettingsForm({ property }: { property: Tables<"properties"> }) {
   const [state, formAction, pending] = useActionState(updateProperty, INITIAL_STATE);
